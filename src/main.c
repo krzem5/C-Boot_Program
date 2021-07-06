@@ -20,6 +20,8 @@ typedef void (*macro_handler_t)(void);
 
 macro_handler_t _handle_macro_hk[256]={NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL};
 uint8_t _handle_macro_ig_alt=0;
+char fp_bf[4096];
+uint32_t fp_bfl;
 
 
 
@@ -87,7 +89,7 @@ void _logout(void){
 
 
 void _shutdown(void){
-	if (MessageBoxW(NULL,L"Logout?",L"Logout",MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2|MB_SYSTEMMODAL)==IDYES){
+	if (MessageBoxW(NULL,L"Shutdown?",L"Shutdown",MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2|MB_SYSTEMMODAL)==IDYES){
 		HANDLE th;
 		TOKEN_PRIVILEGES tkp;
 		OpenProcessToken(GetCurrentProcess(),TOKEN_ADJUST_PRIVILEGES|TOKEN_QUERY,&th);
@@ -97,6 +99,19 @@ void _shutdown(void){
 		AdjustTokenPrivileges(th,FALSE,&tkp,0,NULL,NULL);
 		ExitWindowsEx(EWX_FORCE|EWX_FORCEIFHUNG|EWX_POWEROFF|EWX_SHUTDOWN,SHTDN_REASON_MAJOR_OTHER|SHTDN_REASON_MINOR_OTHER|SHTDN_REASON_FLAG_PLANNED);
 	}
+}
+
+
+
+void _start_mc_async(void){
+	char tmp[4096];
+	uint32_t i=0;
+	for (;i<fp_bfl;i++){
+		tmp[i]=fp_bf[i];
+	}
+	tmp[i]='7';
+	tmp[i+1]=0;
+	_create_process(tmp);
 }
 
 
@@ -147,24 +162,25 @@ int WinMain(HINSTANCE hi,HINSTANCE p_hi,LPSTR cmd,int sw){
 		str++;
 	}
 	bf[i]=0;
-	char fp_bf[4096]={'\"'};
-	uint32_t fp_bfi=GetModuleFileNameA(NULL,fp_bf+1,4095)+3;
-	fp_bf[fp_bfi-2]='\"';
-	fp_bf[fp_bfi-1]=' ';
+	fp_bfl=GetModuleFileNameA(NULL,fp_bf+1,4095)+3;
+	fp_bf[0]='\"';
+	fp_bf[fp_bfl-2]='\"';
+	fp_bf[fp_bfl-1]=' ';
 	if (argc<2){
-		fp_bf[fp_bfi]='0';
-		fp_bf[fp_bfi+1]=0;
+		fp_bf[fp_bfl]='0';
+		fp_bf[fp_bfl+1]=0;
 		_create_process(fp_bf);
 		return 0;
 	}
 	switch (argv[1][0]-48){
 		case 0:
 			{
-				fp_bf[fp_bfi]='7';
-				fp_bf[fp_bfi+1]=0;
+				fp_bf[fp_bfl]='7';
+				fp_bf[fp_bfl+1]=0;
 				_create_process(fp_bf);
 				_handle_macro_hk[VK_END]=_shutdown;
 				_handle_macro_hk[VK_HOME]=_logout;
+				_handle_macro_hk['I']=_start_mc_async;
 				SetWindowsHookExW(WH_KEYBOARD_LL,_handle_macro,GetModuleHandleW(NULL),0);
 				MSG msg;
 				while (1){
