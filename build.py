@@ -5,7 +5,7 @@ import os
 
 
 __file__=os.path.abspath(__file__).replace("\\","/")
-DEFINES={"__FILE_BASE_DIR__":"L\""+__file__[:-len(__file__.split("/")[-1])-1].rstrip("/")+"/\""}
+DEFINES={"__FILE_BASE_DIR__":"\""+__file__[:-len(__file__.split("/")[-1])-1].rstrip("/")+"\""}
 DEFAULT_ARGS=[]
 
 

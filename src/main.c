@@ -1,33 +1,43 @@
 #ifndef _MSC_VER
 #error Non-Windows Platforms not Supported!
 #endif
+#define WIN32_LEAN_AND_MEAN 1
+#define _CRT_SECURE_NO_WARNINGS 1
+#include <windows.h>
 #include <conio.h>
 #include <fcntl.h>
 #include <io.h>
+#include <shellapi.h>
 #include <shellscalingapi.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <windows.h>
 
 
 
+#define CREATE_UPPER_KEY(x) (UPPER_KEY_MASK|((x)<<8))
+#define IS_GETCH_DOUBLE_KEY(x) (!(x)||(x)==0xe0)
 #define _WCHAR_STR(x) L##x
 #define WCHAR_STR(x) _WCHAR_STR(x)
 #define BLENDER_FILE_PATH "C:/Program Files/Blender Foundation/Blender/blender.exe"
 #define CHROME_FILE_PATH "C:/Program Files/Google/Chrome Dev/Application/chrome.exe"
-#define CUSTOM_ICON_FILE_PATH (__FILE_BASE_DIR__ L"rsrc/icon.ico")
+#define CUSTOM_ICON_FILE_PATH WCHAR_STR(__FILE_BASE_DIR__)L"/rsrc/icon.ico"
 #define EDITOR_FILE_PATH "C:/Program Files/Sublime Text 3/sublime_text.exe"
 #define FLAG_ASK_CREATE 2
 #define FLAG_DATA 1
 #define FLAG_EDIT_TYPE 4
+#define FLAG_INITIALIZE 2
+#define FLAG_OPEN 1
 #define FLAG_QUOTE 2
 #define FLAG_UPDATE 1
+#define GETCH_DEL CREATE_UPPER_KEY('S')
 #define GIMP_FILE_PATH "C:/Program Files/GIMP 2/bin/gimp-2.10.exe"
 #define HOTKEY_HANDLER_END_MESSAGE (WM_USER+1)
 #define MINECRAFT_LAUNCHER_FILE_PATH "C:/Program Files (x86)/Minecraft Launcher/MinecraftLauncher.exe"
-#define PROJECT_DIR "D:/k/code"
-#define ROOT_FILE_PATH "D:/k"
+#define PROJECT_DIR "d:/k/code"
+#define ROOT_FILE_PATH "d:/k"
+#define TEMPLATES_FILE_PATH __FILE_BASE_DIR__"/templates"
+#define UPPER_KEY_MASK 255
 
 
 
@@ -48,6 +58,16 @@ typedef struct __PROGRAM_TYPE{
 	uint16_t el;
 	string_8bit_t* e;
 } program_type_t;
+
+
+
+typedef struct __EXPAND_DATA{
+	char nm[256];
+	char pt[256];
+	char t[256];
+	char u_nm[256];
+	char y[256];
+} expand_data_t;
 
 
 
@@ -89,6 +109,170 @@ uint8_t _cmp_str_len_lower(const char* a,const char* b,uint8_t l){
 
 
 
+uint8_t _copy_str(char* d,const char* s){
+	uint8_t o=0;
+	while (*(s+o)){
+		*(d+o)=*(s+o);
+		o++;
+	}
+	return o;
+}
+
+
+
+uint8_t _copy_str_expand(char* d,const char* s,expand_data_t* e_dt){
+	uint8_t i=0;
+	uint8_t o=0;
+	while (*(s+i)){
+		char c=*(s+i);
+		if (c=='$'){
+			i++;
+			uint8_t j=i;
+			while (*(s+i)!='$'){
+				i++;
+			}
+			if (i-j==4&&_cmp_str_len_lower(s+j,"name",4)){
+				o+=_copy_str(d+o,e_dt->nm);
+			}
+			else if (i-j==12&&_cmp_str_len_lower(s+j,"pretty_title",12)){
+				o+=_copy_str(d+o,e_dt->pt);
+			}
+			else if (i-j==10&&_cmp_str_len_lower(s+j,"title_name",10)){
+				o+=_copy_str(d+o,e_dt->t);
+			}
+			else if (i-j==14&&_cmp_str_len_lower(s+j,"uppercase_name",14)){
+				o+=_copy_str(d+o,e_dt->u_nm);
+			}
+			else if (i-j==4&&_cmp_str_len_lower(s+j,"year",4)){
+				o+=_copy_str(d+o,e_dt->y);
+			}
+			i++;
+		}
+		else{
+			i++;
+			*(d+o)=c;
+			o++;
+		}
+	}
+	return o;
+}
+
+
+
+uint8_t _str_title_case(char* d,const char* s,uint8_t l){
+	uint8_t o=0;
+	uint8_t st=1;
+	for (uint8_t i=0;i<l;i++){
+		char c=*(s+i);
+		if (c=='_'&&!st){
+			*(d+o)='_';
+			o++;
+			st=1;
+		}
+		else if (!st){
+			if (c>64&&c<91){
+				c+=32;
+			}
+			*(d+o)=c;
+			o++;
+		}
+		else if (st){
+			if (c>96&&c<123){
+				c-=32;
+			}
+			*(d+o)=c;
+			o++;
+			st=0;
+		}
+	}
+	return o;
+}
+
+
+
+void _generate_expand_data(expand_data_t* o,const char* t,const char* nm){
+	uint8_t j=0;
+	uint8_t st=1;
+	while (*t){
+		char c=*t;
+		if (c=='_'&&!st){
+			o->pt[j]=' ';
+			j++;
+			st=1;
+		}
+		else if (!st){
+			o->pt[j]=(c>64&&c<91?c+32:c);
+			j++;
+		}
+		else if (st){
+			o->pt[j]=(c>96&&c<123?c-32:c);
+			j++;
+			st=0;
+		}
+		t++;
+	}
+	if (!st){
+		o->pt[j]=' ';
+		j++;
+	}
+	o->pt[j]='-';
+	o->pt[j+1]=' ';
+	j+=2;
+	st=1;
+	uint8_t i=0;
+	uint8_t k=0;
+	while (*nm){
+		char c=*nm;
+		o->nm[i]=(c>64&&c<91?c+32:c);
+		o->u_nm[i]=(c>96&&c<123?c+32:c);
+		if (c=='_'&&!st){
+			o->pt[j]=' ';
+			o->t[k]=' ';
+			j++;
+			k++;
+			st=1;
+		}
+		else if (!st){
+			o->pt[j]=(c>64&&c<91?c+32:c);
+			o->t[k]=(c>64&&c<91?c+32:c);
+			j++;
+			k++;
+		}
+		else if (st){
+			o->pt[j]=(c>96&&c<123?c-32:c);
+			o->t[k]=(c>96&&c<123?c-32:c);
+			j++;
+			k++;
+			st=0;
+		}
+		nm++;
+		i++;
+	}
+	o->nm[i]=0;
+	o->pt[j]=0;
+	o->t[k]=0;
+	o->u_nm[i]=0;
+	SYSTEMTIME tm;
+	GetLocalTime(&tm);
+	char bf[5];
+	uint8_t m=0;
+	uint32_t v=tm.wYear;
+	while (v){
+		bf[m]=(v%10)+48;
+		m++;
+		v/=10;
+	}
+	uint8_t n=0;
+	while (m){
+		m--;
+		o->y[n]=bf[m];
+		n++;
+	}
+	o->y[n]=0;
+}
+
+
+
 void _create_process(const char* a){
 	STARTUPINFOA si={
 		sizeof(STARTUPINFOA)
@@ -114,6 +298,293 @@ HWND _console(void){
 	SendMessageW(hwnd,WM_SETICON,ICON_SMALL,(LPARAM)LoadImageW(NULL,CUSTOM_ICON_FILE_PATH,IMAGE_ICON,16,16,LR_LOADFROMFILE));
 	SendMessageW(hwnd,WM_SETICON,ICON_BIG,(LPARAM)LoadImageW(NULL,CUSTOM_ICON_FILE_PATH,IMAGE_ICON,32,32,LR_LOADFROMFILE));
 	return hwnd;
+}
+
+
+
+void _copy_file(const char* d,const char* s,expand_data_t* e_dt){
+	FILE* df=fopen(d,"wb");
+	if (!df){
+		return;
+	}
+	FILE* sf=fopen(s,"rb");
+	if (!sf){
+		fclose(df);
+	}
+	char c=fgetc(sf);
+	while (c!=EOF){
+		if (c=='$'){
+			char bf[256];
+			uint8_t i=0;
+			c=fgetc(sf);
+			while (c!='$'){
+				bf[i]=c;
+				i++;
+				c=fgetc(sf);
+			}
+			char* dt=NULL;
+			if (i==4&&_cmp_str_len_lower(bf,"name",4)){
+				dt=e_dt->nm;
+			}
+			else if (i==12&&_cmp_str_len_lower(bf,"pretty_title",12)){
+				dt=e_dt->pt;
+			}
+			else if (i==10&&_cmp_str_len_lower(bf,"title_name",10)){
+				dt=e_dt->t;
+			}
+			else if (i==14&&_cmp_str_len_lower(bf,"uppercase_name",14)){
+				dt=e_dt->u_nm;
+			}
+			else if (i==4&&_cmp_str_len_lower(bf,"year",4)){
+				dt=e_dt->y;
+			}
+			if (dt){
+				while (*dt){
+					fputc(*dt,df);
+					dt++;
+				}
+			}
+		}
+		else{
+			fputc(c,df);
+		}
+		c=fgetc(sf);
+	}
+	fclose(df);
+	fclose(sf);
+}
+
+
+
+void _create_program_copy_data(string_8bit_t* s,string_8bit_t* d,const char* nm,expand_data_t* e_dt){
+	uint8_t sl=s->l;
+	uint8_t dl=d->l;
+	s->l+=_copy_str(s->v+s->l,nm);
+	d->l+=_copy_str_expand(d->v+d->l,nm,e_dt);
+	s->v[s->l]='/';
+	d->v[d->l]='/';
+	s->l++;
+	d->l++;
+	s->v[s->l]='*';
+	s->v[s->l+1]=0;
+	d->v[d->l]=0;
+	CreateDirectoryA(d->v,NULL);
+	WIN32_FIND_DATAA dt;
+	HANDLE fh=FindFirstFileA(s->v,&dt);
+	if (fh!=INVALID_HANDLE_VALUE){
+		do{
+			if (!(dt.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)){
+				s->v[_copy_str(s->v+s->l,dt.cFileName)+s->l]=0;
+				d->v[_copy_str_expand(d->v+d->l,dt.cFileName,e_dt)+d->l]=0;
+				_copy_file(d->v,s->v,e_dt);
+				if (*(dt.cFileName)=='.'){
+					SetFileAttributesA(s->v,FILE_ATTRIBUTE_HIDDEN);
+				}
+			}
+			else{
+				if (*(dt.cFileName)=='.'&&(*(dt.cFileName+1)==0||(*(dt.cFileName+1)=='.'&&*(dt.cFileName+2)==0))){
+					continue;
+				}
+				_create_program_copy_data(s,d,dt.cFileName,e_dt);
+			}
+		} while (FindNextFileA(fh,&dt));
+		FindClose(fh);
+	}
+	s->l=sl;
+	d->l=dl;
+}
+
+
+
+uint8_t _open_first(string_8bit_t* r,const char* ext,char* bf,uint16_t bfi){
+	WIN32_FIND_DATAA dt;
+	r->v[r->l]='*';
+	r->v[r->l+1]=0;
+	HANDLE fh=FindFirstFileA(r->v,&dt);
+	if (fh!=INVALID_HANDLE_VALUE){
+		do{
+			if (dt.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY){
+				if (*(dt.cFileName)=='.'&&(*(dt.cFileName+1)==0||(*(dt.cFileName+1)=='.'&&*(dt.cFileName+2)==0))){
+					continue;
+				}
+				uint8_t rl=r->l;
+				r->l+=_copy_str(r->v+r->l,dt.cFileName);
+				r->v[r->l]='/';
+				r->l++;
+				if (_open_first(r,ext,bf,bfi)){
+					return 1;
+				}
+				r->l=rl;
+			}
+			else{
+				r->v[r->l]=0;
+				uint8_t i=0;
+				uint8_t j=0;
+				while (*(dt.cFileName+i)){
+					if (*(dt.cFileName+i)=='.'){
+						j=i+1;
+					}
+					i++;
+				}
+				if (_cmp_str_len(ext,dt.cFileName+j,i-j)){
+					bfi+=_copy_str(bf+bfi,r->v);
+					bf[bfi+_copy_str(bf+bfi,dt.cFileName)]=0;
+					_create_process(bf);
+					return 1;
+				}
+			}
+		} while (FindNextFileA(fh,&dt));
+		FindClose(fh);
+	}
+	return 0;
+}
+
+
+
+void _create_program(const string_8bit_t* t,const string_8bit_t* nm,uint8_t fl){
+	string_8bit_t p;
+	string_8bit_t tp;
+	if (!t){
+		p.l=_copy_str(p.v,__FILE_BASE_DIR__"/");
+		tp.l=_copy_str(tp.v,TEMPLATES_FILE_PATH"/c/");
+	}
+	else{
+		p.l=_copy_str(p.v,PROJECT_DIR"/");
+		p.l+=_str_title_case(p.v+p.l,t->v,t->l);
+		p.v[p.l]='-';
+		p.l++;
+		p.l+=_str_title_case(p.v+p.l,nm->v,nm->l);
+		p.v[p.l]='/';
+		p.l++;
+		tp.l=_copy_str(tp.v,TEMPLATES_FILE_PATH"/");
+		for (uint8_t i=0;i<t->l;i++){
+			tp.v[tp.l]=*(t->v+i);
+			tp.l++;
+		}
+		tp.v[tp.l]='/';
+		tp.l++;
+		tp.v[tp.l]=0;
+		if (GetFileAttributesA(tp.v)==INVALID_FILE_ATTRIBUTES){
+			return;
+		}
+	}
+	p.v[p.l]=0;
+	if (GetFileAttributesA(p.v)==INVALID_FILE_ATTRIBUTES){
+		fl|=FLAG_INITIALIZE;
+		CreateDirectoryA(p.v,NULL);
+	}
+	tp.v[tp.l]='*';
+	tp.v[tp.l+1]=0;
+	WIN32_FIND_DATAA dt;
+	HANDLE fh=FindFirstFileA(tp.v,&dt);
+	expand_data_t e_dt;
+	_generate_expand_data(&e_dt,(t?t->v:"Python"),(nm?nm->v:"Boot_Program"));
+	uint16_t pl=p.l;
+	if (fh!=INVALID_HANDLE_VALUE){
+		do{
+			if (!(dt.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)){
+				p.v[_copy_str_expand(p.v+p.l,dt.cFileName,&e_dt)+p.l]=0;
+				if (GetFileAttributesA(p.v)==INVALID_FILE_ATTRIBUTES){
+					tp.v[_copy_str(tp.v+tp.l,dt.cFileName)+tp.l]=0;
+					_copy_file(p.v,tp.v,&e_dt);
+					if (*(dt.cFileName)=='.'){
+						SetFileAttributesA(p.v,FILE_ATTRIBUTE_HIDDEN);
+					}
+				}
+			}
+			else if (fl&FLAG_INITIALIZE){
+				if (*(dt.cFileName)=='.'&&(*(dt.cFileName+1)==0||(*(dt.cFileName+1)=='.'&&*(dt.cFileName+2)==0))){
+					continue;
+				}
+				_create_program_copy_data(&tp,&p,dt.cFileName,&e_dt);
+			}
+		} while (FindNextFileA(fh,&dt));
+		FindClose(fh);
+	}
+	p.v[pl]=0;
+	if (!(fl&FLAG_OPEN)){
+		return;
+	}
+	char bf[4096]="\""EDITOR_FILE_PATH"\" ";
+	uint16_t i=0;
+	while (bf[i]){
+		i++;
+	}
+	bf[i]='-';
+	bf[i+1]='-';
+	bf[i+2]='a';
+	bf[i+3]='d';
+	bf[i+4]='d';
+	bf[i+5]=' ';
+	bf[i+6]='\"';
+	uint16_t j=i+7;
+	j+=_copy_str(bf+j,p.v);
+	bf[j]='\"';
+	bf[j+1]=0;
+	_create_process(bf);
+	char* ext=NULL;
+	char* fp=NULL;
+	if (_cmp_str_len_lower(t->v,"arduino",7)){
+		ext="ino";
+		fp="src/main.ino";
+	}
+	else if (_cmp_str_len_lower(t->v,"assembly",8)){
+		ext="asm";
+		fp="src/main.asm";
+	}
+	else if (_cmp_str_len_lower(t->v,"c",1)){
+		ext="c";
+		fp="src/main.c";
+	}
+	else if (_cmp_str_len_lower(t->v,"cpp",3)){
+		ext="cpp";
+		fp="src/main.cpp";
+	}
+	else if (_cmp_str_len_lower(t->v,"css",3)){
+		ext="css";
+		fp="src/style/main.css";
+	}
+	else if (_cmp_str_len_lower(t->v,"java",4)){
+		ext="java";
+		char tmp[4096]="src/com/krzem/";
+		j=0;
+		while (tmp[j]){
+			j++;
+		}
+		j+=_copy_str(tmp+j,e_dt.nm);
+		tmp[j+_copy_str(tmp+j,"/Main.java")]=0;
+		fp=tmp;
+	}
+	else if (_cmp_str_len_lower(t->v,"js",2)){
+		ext="js";
+		fp="src/script/main.js";
+	}
+	else if (_cmp_str_len_lower(t->v,"php",3)){
+		ext="php";
+		fp="src/main.php";
+	}
+	else if (_cmp_str_len_lower(t->v,"pde",3)){
+		ext="pde";
+		fp="src/main.pde";
+	}
+	else{
+		ext="py";
+		fp="src/main.py";
+	}
+	bf[i]='\"';
+	i++;
+	j=i+_copy_str(bf+i,p.v);
+	j+=_copy_str(bf+j,fp);
+	bf[j]='\"';
+	bf[j+1]=0;
+	char tmp[4096]={0};
+	_copy_str(tmp+_copy_str(tmp,p.v),fp);
+	if (GetFileAttributesA(tmp)!=INVALID_FILE_ATTRIBUTES){
+		_create_process(bf);
+	}
+	else{
+		_open_first(&p,ext,bf,i);
+	}
 }
 
 
@@ -395,8 +866,8 @@ int WinMain(HINSTANCE hi,HINSTANCE p_hi,LPSTR cmd,int sw){
 				uint8_t ll=0;
 				while (1){
 					if (_kbhit()){
-						char k=_getch();
-						if (k==0xe0){
+						int k=_getch();
+						if (IS_GETCH_DOUBLE_KEY(k)){
 							_getch();
 						}
 						else if (k==VK_CANCEL){
@@ -467,7 +938,7 @@ int WinMain(HINSTANCE hi,HINSTANCE p_hi,LPSTR cmd,int sw){
 							u=1;
 						}
 						else if (k>31&&k<127){
-							if (bfl<255){
+							if (bfl<UINT8_MAX){
 								bf[bfl]=k;
 								bfl++;
 								u=1;
@@ -494,6 +965,8 @@ int WinMain(HINSTANCE hi,HINSTANCE p_hi,LPSTR cmd,int sw){
 				SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE),128);
 				HANDLE ho=GetStdHandle(STD_OUTPUT_HANDLE);
 				SetConsoleMode(ho,7);
+				CONSOLE_SCREEN_BUFFER_INFO sbi;
+				GetConsoleScreenBufferInfo(ho,&sbi);
 				CONSOLE_CURSOR_INFO ci;
 				GetConsoleCursorInfo(ho,&ci);
 				ci.bVisible=0;
@@ -609,19 +1082,19 @@ _insert_elem:;
 				};
 				while (1){
 					if (_kbhit()){
-						char k=_getch();
-						if (k==0xe0){
-							_getch();
+						int k=_getch();
+						if (IS_GETCH_DOUBLE_KEY(k)){
+							k=CREATE_UPPER_KEY(_getch());
 						}
-						else if (k==VK_CANCEL){
+						if (k==VK_CANCEL){
 							break;
 						}
 						else if (fl&FLAG_ASK_CREATE){
 							if (k=='Y'||k=='y'){
-								printf("Create: %s-%s\n",p_t.v,p_nm.v);
+								_create_program(&p_t,&p_nm,FLAG_OPEN);
 								break;
 							}
-							fl=FLAG_UPDATE|(fl&FLAG_EDIT_TYPE);
+							fl^=FLAG_UPDATE|FLAG_ASK_CREATE;
 						}
 						else if (k==VK_BACK){
 							if (fl&FLAG_EDIT_TYPE){
@@ -640,11 +1113,56 @@ _insert_elem:;
 							}
 						}
 						else if (k==VK_TAB){
-							fl|=FLAG_UPDATE;
+							program_type_t pt={0};
+							if (!p_t.l){
+								for (uint8_t i=0;i<tl[0].l+1;i++){
+									*(p_t.v+i)=*(tl[0].v+i);
+								}
+								p_t.l=tl[0].l;
+								fl|=FLAG_UPDATE;
+							}
+							else{
+								for (uint8_t i=0;i<tll;i++){
+									if (tl[i].l>=p_t.l&&_cmp_str_len_lower(tl[i].v,p_t.v,p_t.l)){
+										if (tl[i].l==p_t.l){
+											pt=tl[i];
+										}
+										if (fl&FLAG_EDIT_TYPE){
+											for (uint8_t j=0;j<tl[i].l+1;j++){
+												*(p_t.v+j)=*(tl[i].v+j);
+											}
+											p_t.l=tl[i].l;
+											fl|=FLAG_UPDATE;
+										}
+										break;
+									}
+								}
+							}
+							if (pt.l&&!(fl&FLAG_EDIT_TYPE)){
+								if (!p_nm.l&&pt.el){
+									for (uint8_t i=0;i<pt.e->l+1;i++){
+										*(p_nm.v+i)=*(pt.e->v+i);
+									}
+									p_nm.l=pt.e->l;
+									fl|=FLAG_UPDATE;
+								}
+								else{
+									for (uint16_t i=0;i<pt.el;i++){
+										if ((pt.e+i)->l>=p_nm.l&&_cmp_str_len_lower((pt.e+i)->v,p_nm.v,p_nm.l)){
+											for (uint8_t j=0;j<(pt.e+i)->l+1;j++){
+												*(p_nm.v+j)=*((pt.e+i)->v+j);
+											}
+											p_nm.l=(pt.e+i)->l;
+											fl|=FLAG_UPDATE;
+											break;
+										}
+									}
+								}
+							}
 						}
 						else if (k==VK_RETURN){
 							if (p_t.l==4&&_cmp_str_len_lower(p_t.v,b_str,4)){
-								printf("Create: Boot\n");
+								_create_program(NULL,NULL,FLAG_OPEN);
 								break;
 							}
 							for (uint8_t i=0;i<tll;i++){
@@ -656,16 +1174,17 @@ _insert_elem:;
 									if ((e.e+j)->l!=p_nm.l||!_cmp_str_len_lower((e.e+j)->v,p_nm.v,p_nm.l)){
 										continue;
 									}
-									printf("Create: %s-%s\n",p_t.v,p_nm.v);
+									_create_program(&p_t,&p_nm,FLAG_OPEN);
 									goto _cleanup_project_list;
 								}
-								fl|=FLAG_ASK_CREATE;
+								fl|=FLAG_UPDATE|FLAG_ASK_CREATE;
+								break;
 							}
 						}
 						else if (k=='-'){
-							fl=FLAG_UPDATE|(fl^FLAG_EDIT_TYPE);
+							fl^=FLAG_UPDATE|FLAG_EDIT_TYPE;
 						}
-						else if ((k>47&&k<58)||(k>64&&k<91)||k==95||(k>96&&k<123)){
+						else if ((k>47&&k<58)||(k>64&&k<91)||k=='_'||(k>96&&k<123)){
 							if (fl&FLAG_EDIT_TYPE){
 								if (p_t.l<UINT8_MAX){
 									p_t.v[p_t.l]=k;
@@ -683,23 +1202,62 @@ _insert_elem:;
 								}
 							}
 						}
+						else if (k==GETCH_DEL){
+							if (fl&FLAG_EDIT_TYPE){
+								p_t.l=0;
+								*(p_t.v)=0;
+							}
+							else{
+								p_nm.l=0;
+								*(p_nm.v)=0;
+							}
+							fl|=FLAG_UPDATE;
+						}
 					}
 					if (fl&FLAG_UPDATE){
-						string_8bit_t pr_t={
-							0,
-							{
-								0
+						char* pr_t="";
+						uint8_t pr_tl=0;
+						program_type_t pt={0};
+						if (!p_t.l){
+							pr_t=tl[0].v;
+							pr_tl=tl[0].l;
+						}
+						else{
+							for (uint8_t i=0;i<tll;i++){
+								if (tl[i].l>=p_t.l&&_cmp_str_len_lower(tl[i].v,p_t.v,p_t.l)){
+									if (tl[i].l==p_t.l){
+										pt=tl[i];
+									}
+									pr_t=tl[i].v+p_t.l;
+									pr_tl=tl[i].l-p_t.l;
+									break;
+								}
 							}
-						};
-						string_8bit_t pr_nm={
-							0,
-							{
-								0
+						}
+						char* pr_nm="";
+						uint8_t pr_nml=0;
+						if (pt.l){
+							if (!p_nm.l&&pt.el){
+								pr_nm=pt.e->v;
+								pr_nml=pt.e->l;
 							}
-						};
+							else{
+								for (uint16_t i=0;i<pt.el;i++){
+									if ((pt.e+i)->l>=p_nm.l&&_cmp_str_len_lower((pt.e+i)->v,p_nm.v,p_nm.l)){
+										pr_nm=(pt.e+i)->v+p_nm.l;
+										pr_nml=(pt.e+i)->l-p_nm.l;
+										break;
+									}
+								}
+							}
+						}
 						fl&=~FLAG_UPDATE;
-						uint16_t ln=10+p_t.l+p_nm.l;
-						printf("\x1b[0;0H\x1b[38;2;98;145;22mProject\x1b[38;2;59;59;59m: \x1b[38;2;255;255;255m%s\x1b[38;2;139;139;139m%s\x1b[38;2;59;59;59m-\x1b[38;2;255;255;255m%s\x1b[38;2;139;139;139m%s",p_t.v,pr_t.v,p_nm.v,pr_nm.v);
+						printf("\x1b[0;0H\x1b[38;2;98;145;22mProject\x1b[38;2;59;59;59m: \x1b[38;2;255;255;255m%s\x1b[38;2;139;139;139m%s\x1b[38;2;59;59;59m-\x1b[38;2;255;255;255m%s\x1b[38;2;139;139;139m%s",p_t.v,pr_t,p_nm.v,pr_nm);
+						uint16_t ln=10+p_t.l+pr_tl+p_nm.l+pr_nml;
+						if (fl&FLAG_ASK_CREATE){
+							printf("\n\x1b[38;2;50;155;204mCreate Project?");
+							ln+=sbi.dwMaximumWindowSize.X+16;
+						}
 						while (ll>ln){
 							ll--;
 							putchar(' ');
