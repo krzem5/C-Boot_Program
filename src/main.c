@@ -5,6 +5,7 @@
 #define _CRT_SECURE_NO_WARNINGS 1
 #include <windows.h>
 #include <conio.h>
+#include <desktop_manager.h>
 #include <fcntl.h>
 #include <io.h>
 #include <shellapi.h>
@@ -26,6 +27,7 @@
 #define FLAG_ASK_CREATE 2
 #define FLAG_DATA 1
 #define FLAG_EDIT_TYPE 4
+#define MINECRAFT_SERVER_FOLDER __FILE_BASE_DIR__"/mc_server/"
 #define FLAG_INITIALIZE 2
 #define FLAG_OPEN 1
 #define FLAG_QUOTE 2
@@ -611,12 +613,27 @@ LRESULT _handle_macro(int c,WPARAM wp,LPARAM lp){
 							ExitWindowsEx(EWX_LOGOFF,SHTDN_REASON_MAJOR_OTHER|SHTDN_REASON_MINOR_OTHER|SHTDN_REASON_FLAG_PLANNED);
 						}
 						break;
+					case '1':
+					case '2':
+					case '3':
+						{
+							char tmp[4096];
+							uint16_t i=0;
+							for (;i<fp_bfl;i++){
+								tmp[i]=fp_bf[i];
+							}
+							tmp[i]='8';
+							tmp[i+1]=' ';
+							tmp[i+2]=(char)(dt->vkCode-1);
+							tmp[i+3]=0;
+							_create_process(tmp);
+						}
 					case 'I':
 					case 'Q':
 					case 'R':
 						{
 							char tmp[4096];
-							uint32_t i=0;
+							uint16_t i=0;
 							for (;i<fp_bfl;i++){
 								tmp[i]=fp_bf[i];
 							}
@@ -717,6 +734,7 @@ int WinMain(HINSTANCE hi,HINSTANCE p_hi,LPSTR cmd,int sw){
 	switch (argv[1][0]-48){
 		case ('_'-48):
 			{
+				_switch_to_desktop(0);
 				fp_bf[fp_bfl]='4';
 				fp_bf[fp_bfl+1]=0;
 				_create_process(fp_bf);
@@ -1272,6 +1290,29 @@ _cleanup_project_list:
 					}
 				}
 				return 0;
+			}
+		case 4:
+			_move_to_desktop(_console(),2);
+			for (uint32_t i=0;i<argc;i++){
+				printf("%u: %s\n",i,argv[i]);
+			}
+			getchar();
+			return 0;
+		case 7:
+			{
+				_move_to_desktop(_console(),2);
+				if (argc==2){
+					printf("Check Update: %s\n",MINECRAFT_SERVER_FOLDER);
+				}
+				else{
+					printf("Start Server: %s/server.jar\n",argv[2]);
+				}
+				getchar();
+				return 0;
+			}
+		case 8:
+			{
+				return _switch_to_desktop(argv[2][0]-48);
 			}
 		default:
 			_console();
