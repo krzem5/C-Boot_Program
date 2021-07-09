@@ -4,12 +4,14 @@
 #define WIN32_LEAN_AND_MEAN 1
 #define _CRT_SECURE_NO_WARNINGS 1
 #include <windows.h>
+#include <shellapi.h>
+#include <shellscalingapi.h>
+#include <winhttp.h>
 #include <conio.h>
 #include <desktop_manager.h>
 #include <fcntl.h>
 #include <io.h>
-#include <shellapi.h>
-#include <shellscalingapi.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,6 +20,13 @@
 
 #define CREATE_UPPER_KEY(x) (UPPER_KEY_MASK|((x)<<8))
 #define IS_GETCH_DOUBLE_KEY(x) (!(x)||(x)==0xe0)
+#define JSON_PARSER_NEXT_CHAR(p) (*((*(p))++))
+#define PRINTF_TIME(t,...) \
+	do{ \
+		SYSTEMTIME __st; \
+		GetLocalTime(&__st); \
+		printf("\x1b[38;2;50;50;50m[%02u:%02u:%02u]\x1b[0m "t,__st.wHour,__st.wMinute,__st.wSecond,##__VA_ARGS__); \
+	} while (0)
 #define _WCHAR_STR(x) L##x
 #define WCHAR_STR(x) _WCHAR_STR(x)
 #define BLENDER_FILE_PATH "C:/Program Files/Blender Foundation/Blender/blender.exe"
@@ -27,7 +36,6 @@
 #define FLAG_ASK_CREATE 2
 #define FLAG_DATA 1
 #define FLAG_EDIT_TYPE 4
-#define MINECRAFT_SERVER_FOLDER __FILE_BASE_DIR__"/mc_server/"
 #define FLAG_INITIALIZE 2
 #define FLAG_OPEN 1
 #define FLAG_QUOTE 2
@@ -35,15 +43,38 @@
 #define GETCH_DEL CREATE_UPPER_KEY('S')
 #define GIMP_FILE_PATH "C:/Program Files/GIMP 2/bin/gimp-2.10.exe"
 #define HOTKEY_HANDLER_END_MESSAGE (WM_USER+1)
+#define HTTP_REQUEST_BUFFER_SIZE 65536
+#define JSON_OBJECT_TYPE_NULL 0
+#define JSON_OBJECT_TYPE_FALSE 1
+#define JSON_OBJECT_TYPE_TRUE 2
+#define JSON_OBJECT_TYPE_INTEGER 3
+#define JSON_OBJECT_TYPE_STRING 4
+#define JSON_OBJECT_TYPE_FLOAT 5
+#define JSON_OBJECT_TYPE_ARRAY 6
+#define JSON_OBJECT_TYPE_MAP 7
+#define MINECRAFT_JAVA_RUNTIME_FILE_PATH "C:/Program Files/Java/jdk-16.0.1/bin/java.exe"
+#define MINECRAFT_JAVA_RUNTIME_MEMORY "512M"
 #define MINECRAFT_LAUNCHER_FILE_PATH "C:/Program Files (x86)/Minecraft Launcher/MinecraftLauncher.exe"
+#define MINECRAFT_SERVER_FOLDER __FILE_BASE_DIR__"/mc_server/"
 #define PROJECT_DIR "d:/k/code"
 #define ROOT_FILE_PATH "d:/k"
+#define SHA1_DATA_INIT {0x67452301,0xefcdab89,0x98badcfe,0x10325476,0xc3d2e1f0}
 #define TEMPLATES_FILE_PATH __FILE_BASE_DIR__"/templates"
 #define UPPER_KEY_MASK 255
+#define USER_AGENT_STRING WCHAR_STR("Boot Program Request API")
 
 
 
-typedef void (*macro_handler_t)(void);
+union __JSON_OBJECT_DATA;
+struct __JSON_MAP_KEYPAIR;
+
+
+
+typedef uint16_t wchar_t;
+
+
+
+typedef char* json_parser_state_t;
 
 
 
@@ -51,6 +82,13 @@ typedef struct __STRING_8BIT{
 	uint8_t l;
 	char v[256];
 } string_8bit_t;
+
+
+
+typedef struct __STRING_32BIT{
+	uint32_t l;
+	char* v;
+} string_32bit_t;
 
 
 
@@ -70,6 +108,54 @@ typedef struct __EXPAND_DATA{
 	char u_nm[256];
 	char y[256];
 } expand_data_t;
+
+
+
+typedef struct __JSON_ARRAY{
+	uint32_t l;
+	struct __JSON_OBJECT* dt;
+} json_array_t;
+
+
+
+typedef struct __JSON_MAP{
+	uint32_t l;
+	struct __JSON_MAP_KEYPAIR* dt;
+} json_map_t;
+
+
+
+typedef union __JSON_OBJECT_DATA{
+	int64_t i;
+	double f;
+	string_32bit_t s;
+	json_array_t a;
+	json_map_t m;
+} json_object_data_t;
+
+
+
+typedef struct __JSON_OBJECT{
+	uint8_t t;
+	union __JSON_OBJECT_DATA dt;
+} json_object_t;
+
+
+
+typedef struct __JSON_MAP_KEYPAIR{
+	string_32bit_t k;
+	json_object_t v;
+} json_map_keypair_t;
+
+
+
+typedef struct __SHA1_DATA{
+	uint32_t a;
+	uint32_t b;
+	uint32_t c;
+	uint32_t d;
+	uint32_t e;
+} sha1_data_t;
 
 
 
@@ -192,6 +278,21 @@ uint8_t _str_title_case(char* d,const char* s,uint8_t l){
 
 
 
+wchar_t* _expand_to_wide(const char* s){
+	uint32_t sz=0;
+	while (*(s+sz)){
+		sz++;
+	}
+	wchar_t* o=malloc((sz+1)*sizeof(wchar_t));
+	for (uint32_t i=0;i<sz;i++){
+		*(o+i)=*(s+i);
+	}
+	*(o+sz)=0;
+	return o;
+}
+
+
+
 void _generate_expand_data(expand_data_t* o,const char* t,const char* nm){
 	uint8_t j=0;
 	uint8_t st=1;
@@ -271,6 +372,306 @@ void _generate_expand_data(expand_data_t* o,const char* t,const char* nm){
 		n++;
 	}
 	o->y[n]=0;
+}
+
+
+
+void _sha1_chunk(sha1_data_t* h,uint8_t* bf){
+	uint32_t w[80];
+	uint32_t a=h->a;
+	uint32_t b=h->b;
+	uint32_t c=h->c;
+	uint32_t d=h->d;
+	uint32_t e=h->e;
+	for (uint8_t i=0;i<64;i+=4){
+		w[i>>2]=(((*(bf+i))<<24)|((*(bf+i+1))<<16)|((*(bf+i+2))<<8)|(*(bf+i+3)));
+		uint32_t na=((a<<5)|(a>>27))+(d^(b&c)^(b&d))+e+0x5a827999+w[i>>2];
+		e=d;
+		d=c;
+		c=(b<<30)|(b>>2);
+		b=a;
+		a=na;
+	}
+	for (uint8_t i=16;i<80;i++){
+		uint32_t v=w[i-3]^w[i-8]^w[i-14]^w[i-16];
+		w[i]=(v<<1)|(v>>31);
+		uint32_t na=((a<<5)|(a>>27))+e+w[i];
+		if (i<20){
+			na+=(d^(b&c)^(b&d))+0x5a827999;
+		}
+		else if (i<40){
+			na+=(b^c^d)+0x6ed9eba1;
+		}
+		else if (i<60){
+			na+=((b&c)|(b&d)|(c&d))+0x8f1bbcdc;
+		}
+		else{
+			na+=(b^c^d)+0xca62c1d6;
+		}
+		e=d;
+		d=c;
+		c=(b<<30)|(b>>2);
+		b=a;
+		a=na;
+	}
+	h->a+=a;
+	h->b+=b;
+	h->c+=c;
+	h->d+=d;
+	h->e+=e;
+}
+
+
+
+uint8_t _cmp_hash(sha1_data_t* h,const char* s){
+	for (uint8_t i=0;i<8;i++){
+		uint32_t j=32-((i+1)<<2);
+		char a=*(s+i);
+		char b=*(s+i+8);
+		char c=*(s+i+16);
+		char d=*(s+i+24);
+		char e=*(s+i+32);
+		if (((h->a>>j)&0xf)!=a-(a>47&&a<58?48:(a>64&&a<91?55:87))||((h->b>>j)&0xf)!=b-(b>47&&b<58?48:(b>64&&b<91?55:87))||((h->c>>j)&0xf)!=c-(c>47&&c<58?48:(c>64&&c<91?55:87))||((h->d>>j)&0xf)!=d-(d>47&&d<58?48:(d>64&&d<91?55:87))||((h->e>>j)&0xf)!=e-(e>47&&e<58?48:(e>64&&e<91?55:87))){
+			return 0;
+		}
+	}
+	return 1;
+}
+
+
+
+uint8_t _parse_json_str(json_parser_state_t* p,string_32bit_t* o){
+	o->l=1;
+	o->v=malloc(sizeof(char));
+	*(o->v)=0;
+	char c=JSON_PARSER_NEXT_CHAR(p);
+	while (c!='\"'){
+		if (c!='\\'){
+			o->l++;
+			o->v=realloc(o->v,o->l*sizeof(char));
+			*(o->v+o->l-2)=c;
+		}
+		else{
+			c=JSON_PARSER_NEXT_CHAR(p);
+			if (c=='/'||c=='\\'||c=='\''||c=='\"'){
+				o->l++;
+				o->v=realloc(o->v,o->l*sizeof(char));
+				*(o->v+o->l-2)=c;
+			}
+			else if (c=='b'){
+				o->l++;
+				o->v=realloc(o->v,o->l*sizeof(char));
+				*(o->v+o->l-2)=8;
+			}
+			else if (c=='f'){
+				o->l++;
+				o->v=realloc(o->v,o->l*sizeof(char));
+				*(o->v+o->l-2)=12;
+			}
+			else if (c=='n'){
+				o->l++;
+				o->v=realloc(o->v,o->l*sizeof(char));
+				*(o->v+o->l-2)=10;
+			}
+			else if (c=='r'){
+				o->l++;
+				o->v=realloc(o->v,o->l*sizeof(char));
+				*(o->v+o->l-2)=13;
+			}
+			else if (c=='t'){
+				o->l++;
+				o->v=realloc(o->v,o->l*sizeof(char));
+				*(o->v+o->l-2)=9;
+			}
+			else if (c=='v'){
+				o->l++;
+				o->v=realloc(o->v,o->l*sizeof(char));
+				*(o->v+o->l-2)=11;
+			}
+			else if (c=='x'){
+				char a=JSON_PARSER_NEXT_CHAR(p);
+				char b=JSON_PARSER_NEXT_CHAR(p);
+				o->l++;
+				o->v=realloc(o->v,o->l*sizeof(char));
+				*(o->v+o->l-2)=((a>47&&a<58?a-48:(a>64&&a<71?a-55:a-87))<<4)|(b>47&&b<58?b-48:(b>64&&b<71?b-55:b-87));
+			}
+			else{
+				printf("Unknown Escape: \\%c\n",c);
+				getchar();
+				ExitProcess(1);
+			}
+		}
+		c=JSON_PARSER_NEXT_CHAR(p);
+	}
+	o->l--;
+	*(o->v+o->l)=0;
+	return 0;
+}
+
+
+
+uint8_t _parse_json(json_parser_state_t* p,json_object_t* o){
+	char c=JSON_PARSER_NEXT_CHAR(p);
+	while (c==' '||c=='\t'||c=='\n'||c=='\r'){
+		c=JSON_PARSER_NEXT_CHAR(p);
+	}
+	if (c=='{'){
+		o->t=JSON_OBJECT_TYPE_MAP;
+		o->dt.m.l=0;
+		o->dt.m.dt=NULL;
+		while (1){
+			while (c!='\"'){
+				c=JSON_PARSER_NEXT_CHAR(p);
+			}
+			o->dt.m.l++;
+			o->dt.m.dt=realloc(o->dt.m.dt,o->dt.m.l*sizeof(json_map_keypair_t));
+			json_map_keypair_t* k=o->dt.m.dt+o->dt.m.l-1;
+			if (_parse_json_str(p,&(k->k))){
+				return 1;
+			}
+			c=JSON_PARSER_NEXT_CHAR(p);
+			while (c!=':'){
+				c=JSON_PARSER_NEXT_CHAR(p);
+			}
+			if (_parse_json(p,&(k->v))){
+				return 1;
+			}
+			c=JSON_PARSER_NEXT_CHAR(p);
+			while (c!=','){
+				if (c=='}'){
+					return 0;
+				}
+				c=JSON_PARSER_NEXT_CHAR(p);
+			}
+		}
+	}
+	if (c=='['){
+		o->t=JSON_OBJECT_TYPE_ARRAY;
+		o->dt.a.l=0;
+		o->dt.a.dt=NULL;
+		while (1){
+			o->dt.a.l++;
+			o->dt.a.dt=realloc(o->dt.a.dt,o->dt.a.l*sizeof(json_object_t));
+			if (_parse_json(p,o->dt.a.dt+o->dt.a.l-1)){
+				return 1;
+			}
+			c=JSON_PARSER_NEXT_CHAR(p);
+			while (c!=','){
+				if (c==']'){
+					return 0;
+				}
+				c=JSON_PARSER_NEXT_CHAR(p);
+			}
+		}
+	}
+	if (c=='\"'){
+		o->t=JSON_OBJECT_TYPE_STRING;
+		return _parse_json_str(p,&(o->dt.s));
+	}
+	if (c=='t'&&_cmp_str_len(*p,"rue",3)){
+		(*p)+=3;
+		o->t=JSON_OBJECT_TYPE_TRUE;
+		return 0;
+	}
+	if (c=='f'&&_cmp_str_len(*p,"alse",4)){
+		(*p)+=4;
+		o->t=JSON_OBJECT_TYPE_FALSE;
+		return 0;
+	}
+	if (c=='n'&&_cmp_str_len(*p,"ull",3)){
+		(*p)+=3;
+		o->t=JSON_OBJECT_TYPE_NULL;
+		return 0;
+	}
+	uint8_t s=1;
+	if (c=='-'){
+		s=-1;
+		c=JSON_PARSER_NEXT_CHAR(p);
+	}
+	double v=0;
+	while (c>47&&c<58){
+		v=v*10+(c-48);
+		c=JSON_PARSER_NEXT_CHAR(p);
+	}
+	if (c!='.'&&c!='e'&&c!='E'){
+		o->t=JSON_OBJECT_TYPE_INTEGER;
+		o->dt.i=(int64_t)(v*s);
+		(*p)--;
+		return 0;
+	}
+	if (c=='.'){
+		double pw=0.1;
+		c=JSON_PARSER_NEXT_CHAR(p);
+		while (c>47&&c<58){
+			v+=pw*(c-47);
+			pw*=0.1;
+			c=JSON_PARSER_NEXT_CHAR(p);
+		}
+	}
+	if (c=='e'||c=='E'){
+		c=JSON_PARSER_NEXT_CHAR(p);
+		int8_t pw_s=1;
+		if (c=='+'){
+			c=JSON_PARSER_NEXT_CHAR(p);
+		}
+		else if (c=='-'){
+			c=JSON_PARSER_NEXT_CHAR(p);
+			pw_s=-1;
+		}
+		int64_t pw=0;
+		while (c>4&&c<58){
+			pw=pw*10+(c-48);
+			c=JSON_PARSER_NEXT_CHAR(p);
+		}
+		pw*=pw_s;
+		v*=pow(2,(double)pw)*pow(5,(double)pw);
+	}
+	(*p)--;
+	o->t=JSON_OBJECT_TYPE_FLOAT;
+	o->dt.f=v*s;
+	return 0;
+}
+
+
+
+json_object_t* _get_by_key(json_object_t* json,const char* k){
+	for (uint32_t i=0;i<json->dt.m.l;i++){
+		json_map_keypair_t* e=json->dt.m.dt+i;
+		if (_cmp_str_len(e->k.v,k,e->k.l+1)){
+			return &(e->v);
+		}
+	}
+	return NULL;
+}
+
+
+
+void _free_json(json_object_t* json){
+	if (json->t=JSON_OBJECT_TYPE_STRING){
+		if (json->dt.s.v){
+			free(json->dt.s.v);
+		}
+	}
+	else if (json->t==JSON_OBJECT_TYPE_ARRAY){
+		for (uint32_t i=0;i<json->dt.a.l;i++){
+			_free_json(json->dt.a.dt+i);
+		}
+		if (json->dt.a.dt){
+			free(json->dt.a.dt);
+		}
+	}
+	else if (json->t==JSON_OBJECT_TYPE_MAP){
+		for (uint32_t i=0;i<json->dt.m.l;i++){
+			json_map_keypair_t* e=json->dt.m.dt+i;
+			if (e->k.v){
+				free(e->k.v);
+			}
+			_free_json(&(e->v));
+		}
+		if (json->dt.m.dt){
+			free(json->dt.m.dt);
+		}
+	}
 }
 
 
@@ -428,7 +829,7 @@ uint8_t _open_first(string_8bit_t* r,const char* ext,char* bf,uint16_t bfi){
 					}
 					i++;
 				}
-				if (_cmp_str_len(ext,dt.cFileName+j,i-j)){
+				if (_cmp_str_len(ext,dt.cFileName+j,i-j+1)){
 					bfi+=_copy_str(bf+bfi,r->v);
 					bf[bfi+_copy_str(bf+bfi,dt.cFileName)]=0;
 					_create_process(bf);
@@ -591,6 +992,208 @@ void _create_program(const string_8bit_t* t,const string_8bit_t* nm,uint8_t fl){
 
 
 
+uint8_t _request(const char* s,const char* m,const char* p,string_32bit_t* o){
+	wchar_t* ws=_expand_to_wide(s);
+	wchar_t* wm=_expand_to_wide(m);
+	wchar_t* wp=_expand_to_wide(p);
+	HINTERNET sh=NULL;
+	HINTERNET ch=NULL;
+	HINTERNET rh=NULL;
+	o->v=malloc(1);
+	if (!(sh=WinHttpOpen(USER_AGENT_STRING,WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0))){
+		goto _error;
+	}
+	if (!(ch=WinHttpConnect(sh,ws,INTERNET_DEFAULT_HTTPS_PORT,0))){
+		goto _error;
+	}
+	free(ws);
+	ws=NULL;
+	if (!(rh=WinHttpOpenRequest(ch,wm,wp,NULL,WINHTTP_NO_REFERER,WINHTTP_DEFAULT_ACCEPT_TYPES,WINHTTP_FLAG_SECURE))){
+		goto _error;
+	}
+	free(wm);
+	free(wp);
+	wm=NULL;
+	wp=NULL;
+	if (!WinHttpSendRequest(rh,WINHTTP_NO_ADDITIONAL_HEADERS,0,WINHTTP_NO_REQUEST_DATA,0,0,0)||!WinHttpReceiveResponse(rh,NULL)){
+		goto _error;
+	}
+	o->l=0;
+	while (1){
+		uint32_t sz;
+		if (!WinHttpQueryDataAvailable(rh,&sz)){
+			goto _error;
+		}
+		if (!sz){
+			break;
+		}
+		o->l+=sz;
+		o->v=realloc(o->v,(o->l+1)*sizeof(char));
+		uint32_t tmp;
+		if (!WinHttpReadData(rh,(LPVOID)(o->v+o->l-sz),sz,&tmp)){
+			goto _error;
+		}
+	}
+	*(o->v+o->l)=0;
+	WinHttpCloseHandle(sh);
+	WinHttpCloseHandle(ch);
+	WinHttpCloseHandle(rh);
+	return 1;
+_error:
+	if (wm){
+		free(wm);
+	}
+	if (ws){
+		free(ws);
+	}
+	if (wp){
+		free(wp);
+	}
+	if (sh){
+		WinHttpCloseHandle(sh);
+	}
+	if (ch){
+		WinHttpCloseHandle(ch);
+	}
+	if (rh){
+		WinHttpCloseHandle(rh);
+	}
+	if (o->v){
+		free(o->v);
+		o->v=NULL;
+	}
+	o->l=0;
+	return 0;
+}
+
+
+
+uint8_t _request_url(const char* m,const char* url,string_32bit_t* o){
+	if (_cmp_str_len(url,"http://",7)){
+		url+=7;
+	}
+	else if (_cmp_str_len(url,"https://",8)){
+		url+=8;
+	}
+	uint32_t i=0;
+	while (*(url+i)!='/'){
+		i++;
+	}
+	char* s=malloc((i+1)*sizeof(char));
+	for (uint32_t j=0;j<i;j++){
+		*(s+j)=*(url+j);
+	}
+	*(s+i)=0;
+	uint8_t rc=_request(s,m,url+i,o);
+	free(s);
+	return rc;
+}
+
+
+
+uint8_t _download_url(const char* url,FILE* o,uint32_t t_sz){
+	if (_cmp_str_len(url,"http://",7)){
+		url+=7;
+	}
+	else if (_cmp_str_len(url,"https://",8)){
+		url+=8;
+	}
+	uint32_t i=0;
+	while (*(url+i)!='/'){
+		i++;
+	}
+	wchar_t* ws=malloc((i+1)*sizeof(wchar_t));
+	for (uint32_t j=0;j<i;j++){
+		*(ws+j)=*(url+j);
+	}
+	*(ws+i)=0;
+	url+=i;
+	i=0;
+	while (*(url+i)){
+		i++;
+	}
+	wchar_t* wp=malloc((i+1)*sizeof(wchar_t));
+	i=0;
+	while (*url){
+		*(wp+i)=*url;
+		url++;
+		i++;
+	}
+	*(wp+i)=0;
+	HINTERNET sh=NULL;
+	HINTERNET ch=NULL;
+	HINTERNET rh=NULL;
+	if (!(sh=WinHttpOpen(USER_AGENT_STRING,WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0))){
+		goto _error;
+	}
+	if (!(ch=WinHttpConnect(sh,ws,INTERNET_DEFAULT_HTTPS_PORT,0))){
+		goto _error;
+	}
+	free(ws);
+	ws=NULL;
+	if (!(rh=WinHttpOpenRequest(ch,L"GET",wp,NULL,WINHTTP_NO_REFERER,WINHTTP_DEFAULT_ACCEPT_TYPES,WINHTTP_FLAG_SECURE))){
+		goto _error;
+	}
+	free(wp);
+	wp=NULL;
+	if (!WinHttpSendRequest(rh,WINHTTP_NO_ADDITIONAL_HEADERS,0,WINHTTP_NO_REQUEST_DATA,0,0,0)||!WinHttpReceiveResponse(rh,NULL)){
+		goto _error;
+	}
+	uint8_t lp=0;
+	char bf[HTTP_REQUEST_BUFFER_SIZE];
+	uint32_t t=0;
+	if (t_sz){
+		PRINTF_TIME("\x1b[38;2;100;100;100m0%% Downloaded...\n");
+	}
+	while (1){
+		uint32_t sz;
+		if (!WinHttpQueryDataAvailable(rh,&sz)){
+			goto _error;
+		}
+		if (!sz){
+			break;
+		}
+		if (sz>HTTP_REQUEST_BUFFER_SIZE){
+			sz=HTTP_REQUEST_BUFFER_SIZE;
+		}
+		t+=sz;
+		if (t_sz&&t*100/t_sz>lp){
+			lp=t*100/t_sz;
+			PRINTF_TIME("\x1b[38;2;100;100;100m%u%% Downloaded...\n",lp);
+		}
+		uint32_t tmp;
+		if (!WinHttpReadData(rh,(LPVOID)bf,sz,&tmp)||fwrite(bf,sizeof(char),sz,o)!=sz){
+			goto _error;
+		}
+	}
+	if (t_sz){
+		PRINTF_TIME("\x1b[38;2;100;100;100m100%% Downloaded...\n");
+	}
+	WinHttpCloseHandle(sh);
+	WinHttpCloseHandle(ch);
+	WinHttpCloseHandle(rh);
+	return 1;
+_error:
+	if (ws){
+		free(ws);
+	}
+	if (wp){
+		free(wp);
+	}
+	if (sh){
+		WinHttpCloseHandle(sh);
+	}
+	if (ch){
+		WinHttpCloseHandle(ch);
+	}
+	if (rh){
+		WinHttpCloseHandle(rh);
+	}
+	return 0;
+}
+
+
+
 LRESULT _handle_macro(int c,WPARAM wp,LPARAM lp){
 	KBDLLHOOKSTRUCT* dt=(KBDLLHOOKSTRUCT*)lp;
 	if (dt->vkCode!=VK_PACKET&&(dt->flags&(LLKHF_INJECTED|LLKHF_ALTDOWN|LLKHF_UP))==0){
@@ -627,6 +1230,7 @@ LRESULT _handle_macro(int c,WPARAM wp,LPARAM lp){
 							tmp[i+2]=(char)(dt->vkCode-1);
 							tmp[i+3]=0;
 							_create_process(tmp);
+							break;
 						}
 					case 'I':
 					case 'Q':
@@ -1301,19 +1905,133 @@ _cleanup_project_list:
 		case 7:
 			{
 				_move_to_desktop(_console(),2);
-				if (argc==2){
-					printf("Check Update: %s\n",MINECRAFT_SERVER_FOLDER);
+				PRINTF_TIME("Starting Minecraft Server in Folder \x1b[38;2;91;216;38m'%s'\x1b[38;2;100;100;100m...\n",MINECRAFT_SERVER_FOLDER);
+				if (GetFileAttributesA(MINECRAFT_SERVER_FOLDER)==INVALID_FILE_ATTRIBUTES){
+					PRINTF_TIME("\x1b[38;2;200;40;20mMinecraft Server Folder Missing.\x1b[0m Quitting\x1b[38;2;100;100;100m...\n");
+					getchar();
+					return 1;
 				}
-				else{
-					printf("Start Server: %s/server.jar\n",argv[2]);
+				PRINTF_TIME("Downloading Metadata\x1b[38;2;100;100;100m...\n");
+				json_object_t json={
+					JSON_OBJECT_TYPE_NULL
+				};
+				string_32bit_t dt;
+				if (!_request("launchermeta.mojang.com","GET","/mc/game/version_manifest.json",&dt)){
+					goto _skip_update;
 				}
-				getchar();
+				json_parser_state_t p=dt.v;
+				if (_parse_json(&p,&json)){
+					free(dt.v);
+					goto _skip_update;
+				}
+				free(dt.v);
+				string_32bit_t url=_get_by_key(_get_by_key(&json,"versions")->dt.a.dt,"url")->dt.s;
+				PRINTF_TIME("Downloading Release Data From URL \x1b[38;2;91;216;38m'%s'\x1b[38;2;100;100;100m...\n",url.v);
+				if (!_request_url("GET",url.v,&dt)){
+					goto _skip_update;
+				}
+				_free_json(&json);
+				json.t=JSON_OBJECT_TYPE_NULL;
+				p=dt.v;
+				if (_parse_json(&p,&json)){
+					free(dt.v);
+					goto _skip_update;
+				}
+				free(dt.v);
+				json_object_t* s_dt=_get_by_key(_get_by_key(&json,"downloads"),"server");
+				uint32_t n_sz=(uint32_t)_get_by_key(s_dt,"size")->dt.i;
+				if (GetFileAttributesA(MINECRAFT_SERVER_FOLDER"server.jar")!=INVALID_FILE_ATTRIBUTES){
+					PRINTF_TIME("Inspecting Current Version\x1b[38;2;100;100;100m...\n");
+					HANDLE fh=CreateFileA(MINECRAFT_SERVER_FOLDER"server.jar",GENERIC_READ,0,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
+					uint32_t sz=GetFileSize(fh,NULL);
+					CloseHandle(fh);
+					PRINTF_TIME("File Size: \x1b[38;2;48;109;206m%u\x1b[0m, New Size: \x1b[38;2;48;109;206m%u\n",sz,n_sz);
+					if (sz==n_sz){
+						uint32_t i=sz;
+						uint8_t bf[64];
+						sha1_data_t h=SHA1_DATA_INIT;
+						uint8_t bfl;
+						uint8_t lp=0;
+						FILE* f=fopen(MINECRAFT_SERVER_FOLDER"server.jar","rb");
+						PRINTF_TIME("\x1b[38;2;100;100;100m0%% Hashed...\n");
+						while (1){
+							uint32_t j=(i>64?64:i);
+							if (fread(bf,sizeof(uint8_t),j,f)!=j){
+								fclose(f);
+								goto _skip_update;
+							}
+							if (j!=64){
+								bfl=j;
+								break;
+							}
+							_sha1_chunk(&h,bf);
+							i-=64;
+							if (!i){
+								bfl=0;
+							}
+							if ((sz-i)*100/sz>lp){
+								lp=(sz-i)*100/sz;
+								PRINTF_TIME("\x1b[38;2;100;100;100m%u%% Hashed...\n",lp);
+							}
+						}
+						fclose(f);
+						bf[bfl]=0x80;
+						bfl++;
+						if (bfl>=56){
+							while (bfl<64){
+								bf[bfl]=0;
+								bfl++;
+							}
+							_sha1_chunk(&h,bf);
+							bfl=0;
+						}
+						while (bfl<56){
+							bf[bfl]=0;
+							bfl++;
+						}
+						uint64_t v=sz<<3;
+						for (uint8_t j=63;j>=56;j--){
+							bf[j]=v&0xff;
+							v>>=8;
+						}
+						_sha1_chunk(&h,bf);
+						PRINTF_TIME("\x1b[38;2;100;100;100m100%% Hashed...\n");
+						if (_cmp_hash(&h,_get_by_key(s_dt,"sha1")->dt.s.v)){
+							goto _skip_update;
+						}
+					}
+				}
+				string_32bit_t id=_get_by_key(&json,"id")->dt.s;
+				url=_get_by_key(s_dt,"url")->dt.s;
+				PRINTF_TIME("Downloading Server For \x1b[38;2;48;109;206m%s\x1b[0m (\x1b[38;2;91;216;38m'%s'\x1b[0m)\x1b[38;2;100;100;100m...\n",id.v,url.v);
+				FILE* f=fopen(MINECRAFT_SERVER_FOLDER"server.jar","wb");
+				_download_url(url.v,f,n_sz);
+				fclose(f);
+_skip_update:;
+				_free_json(&json);
+				printf("\x1b[0m");
+				CONSOLE_SCREEN_BUFFER_INFO sbi;
+				HANDLE ho=GetStdHandle(STD_OUTPUT_HANDLE);
+				GetConsoleScreenBufferInfo(ho,&sbi);
+				DWORD tmp;
+				COORD z={
+					0,
+					0
+				};
+				FillConsoleOutputCharacterA(ho,' ',sbi.dwSize.X*sbi.dwSize.Y,z,&tmp);
+				FillConsoleOutputAttribute(ho,7,sbi.dwSize.X*sbi.dwSize.Y,z,&tmp);
+				SetConsoleCursorPosition(ho,z);
+				STARTUPINFOA si={
+					sizeof(STARTUPINFOA)
+				};
+				PROCESS_INFORMATION pi;
+				CreateProcessA(NULL,"\""MINECRAFT_JAVA_RUNTIME_FILE_PATH"\" -Xms"MINECRAFT_JAVA_RUNTIME_MEMORY" -Xmx"MINECRAFT_JAVA_RUNTIME_MEMORY" -jar \""MINECRAFT_SERVER_FOLDER"server.jar\" --nogui",NULL,NULL,FALSE,0,NULL,MINECRAFT_SERVER_FOLDER,&si,&pi);
+				CloseHandle(pi.hProcess);
+				CloseHandle(pi.hThread);
 				return 0;
 			}
 		case 8:
-			{
-				return _switch_to_desktop(argv[2][0]-48);
-			}
+			return _switch_to_desktop(argv[2][0]-48);
 		default:
 			_console();
 			for (uint32_t i=0;i<argc;i++){
