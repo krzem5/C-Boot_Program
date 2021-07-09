@@ -65,7 +65,7 @@
 
 
 
-union __JSON_OBJECT_DATA;
+struct __JSON_OBJECT;
 struct __JSON_MAP_KEYPAIR;
 
 
@@ -137,7 +137,7 @@ typedef union __JSON_OBJECT_DATA{
 
 typedef struct __JSON_OBJECT{
 	uint8_t t;
-	union __JSON_OBJECT_DATA dt;
+	json_object_data_t dt;
 } json_object_t;
 
 
