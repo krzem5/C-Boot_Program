@@ -6,7 +6,7 @@ import os
 
 __file__=os.path.abspath(__file__).replace("\\","/")
 DEFINES={"__FILE_BASE_DIR__":"\""+__file__[:-len(__file__.split("/")[-1])-1].rstrip("/")+"\""}
-DEFAULT_ARGS=[]
+DEFAULT_ARGS=["4","*"]
 
 
 
@@ -26,15 +26,19 @@ dl=[]
 for k,v in DEFINES.items():
 	dl.append("/D")
 	dl.append(k+"="+v)
+for k in os.listdir("lib"):
+	if (k[-4:]==".dll"):
+		with open(f"build/{k}","wb") as wf,open(f"lib/{k}","rb") as rf:
+			wf.write(rf.read())
 if (os.name=="nt"):
 	cd=os.getcwd()
 	os.chdir("build")
 	if ("--release" in sys.argv):
-		if (subprocess.run(["cl","/Wv:18","/c","/permissive-","/Zc:preprocessor","/GS","/utf-8","/W3","/Zc:wchar_t","/Gm-","/sdl","/Zc:inline","/fp:precise","/D","NDEBUG","/D","_WINDOWS","/D","_UNICODE","/D","UNICODE","/errorReport:none","/WX","/Zc:forScope","/Gd","/Oi","/FC","/EHsc","/nologo","/diagnostics:column","/GL","/Gy","/Zi","/O2","/Oi","/MD","../src/*.c","/I","../src/include"]+dl).returncode!=0 or subprocess.run(["cl","/Wv:18","/c","/permissive-","/GS","/utf-8","/W3","/Zc:wchar_t","/Gm-","/sdl","/Zc:inline","/fp:precise","/D","NDEBUG","/D","_WINDOWS","/D","_UNICODE","/D","UNICODE","/D","/errorReport:none","/WX","/Zc:forScope","/Gd","/Oi","/FC","/EHsc","/nologo","/diagnostics:column","/GL","/Gy","/Zi","/O2","/Oi","/MD","/I","../src/include","../src/*.cpp"]).returncode!=0 or subprocess.run(["link","*.obj","/OUT:boot_program.exe","/DYNAMICBASE","kernel32.lib","user32.lib","gdi32.lib","winspool.lib","comdlg32.lib","advapi32.lib","shell32.lib","ole32.lib","oleaut32.lib","uuid.lib","odbc32.lib","odbccp32.lib","shcore.lib","winhttp.lib","/MACHINE:X64","/SUBSYSTEM:WINDOWS","/ERRORREPORT:none","/NOLOGO","/TLBID:1","/WX","/LTCG","/OPT:REF","/INCREMENTAL:NO","/OPT:ICF"]).returncode!=0):
+		if (subprocess.run(["cl","/Wv:18","/c","/permissive-","/Zc:preprocessor","/GS","/utf-8","/W3","/Zc:wchar_t","/Gm-","/sdl","/Zc:inline","/fp:precise","/D","NDEBUG","/D","_WINDOWS","/D","_UNICODE","/D","UNICODE","/errorReport:none","/WX","/Zc:forScope","/Gd","/Oi","/FC","/EHsc","/nologo","/diagnostics:column","/GL","/Gy","/Zi","/O2","/Oi","/MD","../src/*.c","/I","../src/include"]+dl).returncode!=0 or subprocess.run(["cl","/Wv:18","/c","/permissive-","/GS","/utf-8","/W3","/Zc:wchar_t","/Gm-","/sdl","/Zc:inline","/fp:precise","/D","NDEBUG","/D","_WINDOWS","/D","_UNICODE","/D","UNICODE","/D","/errorReport:none","/WX","/Zc:forScope","/Gd","/Oi","/FC","/EHsc","/nologo","/diagnostics:column","/GL","/Gy","/Zi","/O2","/Oi","/MD","/I","../src/include","../src/*.cpp"]).returncode!=0 or subprocess.run(["link","*.obj","/OUT:boot_program.exe","/DYNAMICBASE","kernel32.lib","user32.lib","gdi32.lib","winspool.lib","comdlg32.lib","advapi32.lib","shell32.lib","ole32.lib","oleaut32.lib","uuid.lib","odbc32.lib","odbccp32.lib","shcore.lib","ws2_32.lib","../lib/libcrypto.lib","../lib/libssl.lib","/MACHINE:X64","/SUBSYSTEM:WINDOWS","/ERRORREPORT:none","/NOLOGO","/TLBID:1","/WX","/LTCG","/OPT:REF","/INCREMENTAL:NO","/OPT:ICF"]).returncode!=0):
 			os.chdir(cd)
 			sys.exit(1)
 	else:
-		if (subprocess.run(["cl","/Wv:18","/c","/permissive-","/Zc:preprocessor","/GS","/utf-8","/W3","/Zc:wchar_t","/Gm-","/sdl","/Zc:inline","/fp:precise","/D","_DEBUG","/D","_WINDOWS","/D","_UNICODE","/D","UNICODE","/errorReport:none","/WX","/Zc:forScope","/Gd","/Oi","/FC","/EHsc","/nologo","/diagnostics:column","/ZI","/Od","/RTC1","/MDd","../src/*.c","/I","../src/include"]+dl).returncode!=0 or subprocess.run(["cl","/Wv:18","/c","/permissive-","/GS","/utf-8","/W3","/Zc:wchar_t","/Gm-","/sdl","/Zc:inline","/fp:precise","/D","_DEBUG","/D","_WINDOWS","/D","_UNICODE","/D","UNICODE","/D","/errorReport:none","/WX","/Zc:forScope","/Gd","/Oi","/FC","/EHsc","/nologo","/diagnostics:column","/ZI","/Od","/RTC1","/MDd","/I","../src/include","../src/*.cpp"]).returncode!=0 or subprocess.run(["link","*.obj","/OUT:boot_program.exe","/DYNAMICBASE","kernel32.lib","user32.lib","gdi32.lib","winspool.lib","comdlg32.lib","advapi32.lib","shell32.lib","ole32.lib","oleaut32.lib","uuid.lib","odbc32.lib","odbccp32.lib","shcore.lib","winhttp.lib","/MACHINE:X64","/SUBSYSTEM:WINDOWS","/ERRORREPORT:none","/NOLOGO","/TLBID:1","/WX","/DEBUG","/INCREMENTAL"]).returncode!=0):
+		if (subprocess.run(["cl","/Wv:18","/c","/permissive-","/Zc:preprocessor","/GS","/utf-8","/W3","/Zc:wchar_t","/Gm-","/sdl","/Zc:inline","/fp:precise","/D","_DEBUG","/D","_WINDOWS","/D","_UNICODE","/D","UNICODE","/errorReport:none","/WX","/Zc:forScope","/Gd","/Oi","/FC","/EHsc","/nologo","/diagnostics:column","/ZI","/Od","/RTC1","/MDd","../src/*.c","/I","../src/include"]+dl).returncode!=0 or subprocess.run(["cl","/Wv:18","/c","/permissive-","/GS","/utf-8","/W3","/Zc:wchar_t","/Gm-","/sdl","/Zc:inline","/fp:precise","/D","_DEBUG","/D","_WINDOWS","/D","_UNICODE","/D","UNICODE","/D","/errorReport:none","/WX","/Zc:forScope","/Gd","/Oi","/FC","/EHsc","/nologo","/diagnostics:column","/ZI","/Od","/RTC1","/MDd","/I","../src/include","../src/*.cpp"]).returncode!=0 or subprocess.run(["link","*.obj","/OUT:boot_program.exe","/DYNAMICBASE","kernel32.lib","user32.lib","gdi32.lib","winspool.lib","comdlg32.lib","advapi32.lib","shell32.lib","ole32.lib","oleaut32.lib","uuid.lib","odbc32.lib","odbccp32.lib","shcore.lib","ws2_32.lib","../lib/libcrypto.lib","../lib/libssl.lib","/MACHINE:X64","/SUBSYSTEM:WINDOWS","/ERRORREPORT:none","/NOLOGO","/TLBID:1","/WX","/DEBUG","/INCREMENTAL"]).returncode!=0):
 			os.chdir(cd)
 			sys.exit(1)
 	os.chdir(cd)

@@ -6,7 +6,8 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <shellscalingapi.h>
-#include <winhttp.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <conio.h>
 #include <desktop_manager.h>
 #include <fcntl.h>
@@ -15,6 +16,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <openssl/bio.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 
 
@@ -33,17 +37,27 @@
 #define CHROME_FILE_PATH "C:/Program Files/Google/Chrome Dev/Application/chrome.exe"
 #define CUSTOM_ICON_FILE_PATH WCHAR_STR(__FILE_BASE_DIR__)L"/rsrc/icon.ico"
 #define EDITOR_FILE_PATH "C:/Program Files/Sublime Text 3/sublime_text.exe"
+#define FLAG_ACCEPT_GITHUB 2
+#define FLAG_ACCEPT_JSON 1
 #define FLAG_ASK_CREATE 2
+#define FLAG_CHUNKED_TRANSFER 8
 #define FLAG_DATA 1
 #define FLAG_EDIT_TYPE 4
+#define FLAG_GITHUB_TOKEN 4
 #define FLAG_INITIALIZE 2
+#define FLAG_INVERT 1
 #define FLAG_OPEN 1
 #define FLAG_QUOTE 2
 #define FLAG_UPDATE 1
 #define GETCH_DEL CREATE_UPPER_KEY('S')
 #define GIMP_FILE_PATH "C:/Program Files/GIMP 2/bin/gimp-2.10.exe"
+#define GITHUB_API_QUOTA 5000
+#define GITHUB_DEFAULT_BRANCH_NAME "main"
+#define GITHUB_HEADERS "application/vnd.github.v3+json"
+#define GITHUB_PROJECT_BRANCH_LIST_FILE_PATH __FILE_BASE_DIR__"/data/github-branches.dt"
+#define GITHUB_PUSHED_PROJECT_LIST_FILE_PATH __FILE_BASE_DIR__"/data/github.dt"
 #define HOTKEY_HANDLER_END_MESSAGE (WM_USER+1)
-#define HTTP_REQUEST_BUFFER_SIZE 65536
+#define HTTP_REQUEST_BUFFER_SIZE 4096
 #define JSON_OBJECT_TYPE_NULL 0
 #define JSON_OBJECT_TYPE_FALSE 1
 #define JSON_OBJECT_TYPE_TRUE 2
@@ -92,12 +106,19 @@ typedef struct __STRING_32BIT{
 
 
 
-typedef struct __PROGRAM_TYPE{
+typedef struct __PROJECT_TYPE{
 	uint8_t l;
 	char v[256];
 	uint16_t el;
 	string_8bit_t* e;
-} program_type_t;
+} project_type_t;
+
+
+
+typedef union __EXPAND_DATA_EXTRA{
+	char y[256];
+	char fp[256];
+} expand_data_extra_t;
 
 
 
@@ -106,7 +127,7 @@ typedef struct __EXPAND_DATA{
 	char pt[256];
 	char t[256];
 	char u_nm[256];
-	char y[256];
+	expand_data_extra_t e;
 } expand_data_t;
 
 
@@ -159,9 +180,24 @@ typedef struct __SHA1_DATA{
 
 
 
+typedef struct __GITHUB_BRANCH{
+	string_8bit_t nm;
+	string_8bit_t b;
+} github_branch_t;
+
+
+
+typedef struct __GITIGNORE_FILE_DATA{
+	uint16_t sz;
+} gitignore_file_data_t;
+
+
+
 uint8_t _handle_macro_ig_alt=0;
 char fp_bf[4096];
 uint32_t fp_bfl;
+WSADATA _ws_dt;
+char _gh_token[256]={0};
 
 
 
@@ -232,7 +268,7 @@ uint8_t _copy_str_expand(char* d,const char* s,expand_data_t* e_dt){
 				o+=_copy_str(d+o,e_dt->u_nm);
 			}
 			else if (i-j==4&&_cmp_str_len_lower(s+j,"year",4)){
-				o+=_copy_str(d+o,e_dt->y);
+				o+=_copy_str(d+o,e_dt->e.y);
 			}
 			i++;
 		}
@@ -327,7 +363,7 @@ void _generate_expand_data(expand_data_t* o,const char* t,const char* nm){
 	while (*nm){
 		char c=*nm;
 		o->nm[i]=(c>64&&c<91?c+32:c);
-		o->u_nm[i]=(c>96&&c<123?c+32:c);
+		o->u_nm[i]=(c>96&&c<123?c-32:c);
 		if (c=='_'&&!st){
 			o->pt[j]=' ';
 			o->t[k]=' ';
@@ -368,10 +404,10 @@ void _generate_expand_data(expand_data_t* o,const char* t,const char* nm){
 	uint8_t n=0;
 	while (m){
 		m--;
-		o->y[n]=bf[m];
+		o->e.y[n]=bf[m];
 		n++;
 	}
-	o->y[n]=0;
+	o->e.y[n]=0;
 }
 
 
@@ -739,7 +775,7 @@ void _copy_file(const char* d,const char* s,expand_data_t* e_dt){
 				dt=e_dt->u_nm;
 			}
 			else if (i==4&&_cmp_str_len_lower(bf,"year",4)){
-				dt=e_dt->y;
+				dt=e_dt->e.y;
 			}
 			if (dt){
 				while (*dt){
@@ -759,7 +795,7 @@ void _copy_file(const char* d,const char* s,expand_data_t* e_dt){
 
 
 
-void _create_program_copy_data(string_8bit_t* s,string_8bit_t* d,const char* nm,expand_data_t* e_dt){
+void _create_project_copy_data(string_8bit_t* s,string_8bit_t* d,const char* nm,expand_data_t* e_dt){
 	uint8_t sl=s->l;
 	uint8_t dl=d->l;
 	s->l+=_copy_str(s->v+s->l,nm);
@@ -788,7 +824,7 @@ void _create_program_copy_data(string_8bit_t* s,string_8bit_t* d,const char* nm,
 				if (*(dt.cFileName)=='.'&&(*(dt.cFileName+1)==0||(*(dt.cFileName+1)=='.'&&*(dt.cFileName+2)==0))){
 					continue;
 				}
-				_create_program_copy_data(s,d,dt.cFileName,e_dt);
+				_create_project_copy_data(s,d,dt.cFileName,e_dt);
 			}
 		} while (FindNextFileA(fh,&dt));
 		FindClose(fh);
@@ -844,7 +880,7 @@ uint8_t _open_first(string_8bit_t* r,const char* ext,char* bf,uint16_t bfi){
 
 
 
-void _create_program(const string_8bit_t* t,const string_8bit_t* nm,uint8_t fl){
+void _create_project(const string_8bit_t* t,const string_8bit_t* nm,uint8_t fl){
 	string_8bit_t p;
 	string_8bit_t tp;
 	if (!t){
@@ -899,7 +935,7 @@ void _create_program(const string_8bit_t* t,const string_8bit_t* nm,uint8_t fl){
 				if (*(dt.cFileName)=='.'&&(*(dt.cFileName+1)==0||(*(dt.cFileName+1)=='.'&&*(dt.cFileName+2)==0))){
 					continue;
 				}
-				_create_program_copy_data(&tp,&p,dt.cFileName,&e_dt);
+				_create_project_copy_data(&tp,&p,dt.cFileName,&e_dt);
 			}
 		} while (FindNextFileA(fh,&dt));
 		FindClose(fh);
@@ -992,101 +1028,268 @@ void _create_program(const string_8bit_t* t,const string_8bit_t* nm,uint8_t fl){
 
 
 
-uint8_t _request(const char* s,const char* m,const char* p,string_32bit_t* o){
-	wchar_t* ws=_expand_to_wide(s);
-	wchar_t* wm=_expand_to_wide(m);
-	wchar_t* wp=_expand_to_wide(p);
-	HINTERNET sh=NULL;
-	HINTERNET ch=NULL;
-	HINTERNET rh=NULL;
-	o->v=malloc(1);
-	if (!(sh=WinHttpOpen(USER_AGENT_STRING,WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0))){
-		goto _error;
-	}
-	if (!(ch=WinHttpConnect(sh,ws,INTERNET_DEFAULT_HTTPS_PORT,0))){
-		goto _error;
-	}
-	free(ws);
-	ws=NULL;
-	if (!(rh=WinHttpOpenRequest(ch,wm,wp,NULL,WINHTTP_NO_REFERER,WINHTTP_DEFAULT_ACCEPT_TYPES,WINHTTP_FLAG_SECURE))){
-		goto _error;
-	}
-	free(wm);
-	free(wp);
-	wm=NULL;
-	wp=NULL;
-	if (!WinHttpSendRequest(rh,WINHTTP_NO_ADDITIONAL_HEADERS,0,WINHTTP_NO_REQUEST_DATA,0,0,0)||!WinHttpReceiveResponse(rh,NULL)){
-		goto _error;
-	}
-	o->l=0;
-	while (1){
-		uint32_t sz;
-		if (!WinHttpQueryDataAvailable(rh,&sz)){
-			goto _error;
-		}
-		if (!sz){
-			break;
-		}
-		o->l+=sz;
-		o->v=realloc(o->v,(o->l+1)*sizeof(char));
-		uint32_t tmp;
-		if (!WinHttpReadData(rh,(LPVOID)(o->v+o->l-sz),sz,&tmp)){
-			goto _error;
-		}
-	}
-	*(o->v+o->l)=0;
-	WinHttpCloseHandle(sh);
-	WinHttpCloseHandle(ch);
-	WinHttpCloseHandle(rh);
-	return 1;
-_error:
-	if (wm){
-		free(wm);
-	}
-	if (ws){
-		free(ws);
-	}
-	if (wp){
-		free(wp);
-	}
-	if (sh){
-		WinHttpCloseHandle(sh);
-	}
-	if (ch){
-		WinHttpCloseHandle(ch);
-	}
-	if (rh){
-		WinHttpCloseHandle(rh);
-	}
-	if (o->v){
-		free(o->v);
-		o->v=NULL;
-	}
-	o->l=0;
-	return 0;
-}
-
-
-
-uint8_t _request_url(const char* m,const char* url,string_32bit_t* o){
+char* _request_url(const char* m,const char* url,const string_32bit_t* dt,uint8_t fl){
 	if (_cmp_str_len(url,"http://",7)){
 		url+=7;
 	}
 	else if (_cmp_str_len(url,"https://",8)){
 		url+=8;
 	}
-	uint32_t i=0;
-	while (*(url+i)!='/'){
+	char bf[4096];
+	uint16_t i=0;
+	while (*(m+i)){
+		bf[i]=*(m+i);
 		i++;
 	}
-	char* s=malloc((i+1)*sizeof(char));
-	for (uint32_t j=0;j<i;j++){
-		*(s+j)=*(url+j);
+	bf[i]=' ';
+	i++;
+	char s[256];
+	uint16_t j=0;
+	while (*(url+j)!='/'){
+		s[j]=*(url+j);
+		j++;
 	}
-	*(s+i)=0;
-	uint8_t rc=_request(s,m,url+i,o);
-	free(s);
-	return rc;
+	s[j]=0;
+	i+=_copy_str(bf+i,url+j);
+	i+=_copy_str(bf+i," HTTP/1.1\r\nHost:");
+	i+=_copy_str(bf+i,s);
+	if (dt){
+		i+=_copy_str(bf+i,"\r\nContent-Length:");
+		char tmp[10];
+		j=0;
+		uint32_t v=dt->l;
+		do{
+			tmp[j]=v%10;
+			v/=10;
+			j++;
+		} while(v);
+		while (j){
+			j--;
+			bf[i]=tmp[j]+48;
+			i++;
+		}
+	}
+	if (fl&FLAG_ACCEPT_JSON){
+		i+=_copy_str(bf+i,"\r\nAccept:application/json");
+	}
+	if (fl&FLAG_ACCEPT_GITHUB){
+		i+=_copy_str(bf+i,"\r\nAccept:"GITHUB_HEADERS);
+	}
+	if (fl&FLAG_GITHUB_TOKEN){
+		i+=_copy_str(bf+i,"\r\nAuthorization:token ");
+		if (!_gh_token[0]){
+			FILE* f=fopen(__FILE_BASE_DIR__"/data/github-secret.dt","rb");
+			_gh_token[fread(_gh_token,sizeof(char),256,f)]=0;
+			fclose(f);
+			j=0;
+			while (_gh_token[j]>31&&_gh_token[j]<127){
+				j++;
+			}
+			_gh_token[j]=0;
+		}
+		i+=_copy_str(bf+i,_gh_token);
+	}
+	i+=_copy_str(bf+i,"\r\n\r\n");
+	ADDRINFOA h={
+		0,
+		AF_UNSPEC,
+		SOCK_STREAM,
+		IPPROTO_TCP,
+		0,
+		NULL,
+		NULL,
+		NULL
+	};
+	ADDRINFOA* addr=NULL;
+	if (getaddrinfo(s,"443",&h,&addr)){
+		return NULL;
+	}
+	SOCKET sck;
+	ADDRINFOA* c=addr;
+	do{
+		sck=socket(c->ai_family,c->ai_socktype,c->ai_protocol);
+		if (sck==INVALID_SOCKET){
+			freeaddrinfo(addr);
+			return NULL;
+		}
+		if (connect(sck,c->ai_addr,(int)c->ai_addrlen)!=SOCKET_ERROR){
+			break;
+		}
+		closesocket(sck);
+		sck=INVALID_SOCKET;
+		c=c->ai_next;
+	} while (c);
+	freeaddrinfo(addr);
+	if (!c){
+		return NULL;
+	}
+	SSL_CTX* ctx=SSL_CTX_new(TLS_client_method());
+	if (!ctx){
+		closesocket(sck);
+		return NULL;
+	}
+	SSL* ssl=SSL_new(ctx);
+	if (!ssl){
+		closesocket(sck);
+		return NULL;
+	}
+	SSL_set_fd(ssl,(int)sck);
+	if (SSL_connect(ssl)!=1){
+		closesocket(sck);
+		return NULL;
+	}
+	SSL_write(ssl,bf,i);
+	if (dt&&dt->l){
+		SSL_write(ssl,dt->v,dt->l);
+	}
+	char o_bf[HTTP_REQUEST_BUFFER_SIZE];
+	size_t o_bf_sz=0;
+	SSL_read_ex(ssl,o_bf,HTTP_REQUEST_BUFFER_SIZE,&o_bf_sz);
+	i=0;
+	uint8_t st=0;
+	char hk[4096];
+	uint16_t hkl=0;
+	char hv[4096];
+	uint16_t hvl=0;
+	uint32_t ln=UINT32_MAX;
+	while (1){
+		if (i==o_bf_sz){
+			SSL_read_ex(ssl,o_bf,HTTP_REQUEST_BUFFER_SIZE,&o_bf_sz);
+			i=0;
+		}
+		char c=o_bf[i];
+		i++;
+		if (c=='\r'||c=='\n'){
+			if (st>4){
+				if (hkl==17&&_cmp_str_len_lower(hk,"transfer-encoding",17)){
+					if (hvl==7&&_cmp_str_len_lower(hv,"chunked",7)){
+						fl|=FLAG_CHUNKED_TRANSFER;
+					}
+					else{
+						fl&=~FLAG_CHUNKED_TRANSFER;
+					}
+				}
+				else if (hkl==14&&_cmp_str_len_lower(hk,"content-length",14)){
+					ln=0;
+					for (uint16_t k=0;k<hvl;k++){
+						ln=ln*10+(hv[k]-48);
+					}
+				}
+				hkl=0;
+				hvl=0;
+				st=1;
+			}
+			else{
+				st++;
+				if (st==4){
+					break;
+				}
+			}
+		}
+		else if (st==2){
+			hk[0]=c;
+			hkl=1;
+			st=0;
+		}
+		else if (st==5&&(c==' '||c=='\t')){
+			continue;
+		}
+		else if (st>4){
+			st=6;
+			hv[hvl]=c;
+			hvl++;
+		}
+		else if (c==':'){
+			st=5;
+		}
+		else{
+			hk[hkl]=c;
+			hkl++;
+		}
+	}
+	char* o;
+	if (fl&FLAG_CHUNKED_TRANSFER){
+		o=malloc(sizeof(char));
+		ln=0;
+		if (i==o_bf_sz){
+			SSL_read_ex(ssl,o_bf,HTTP_REQUEST_BUFFER_SIZE,&o_bf_sz);
+			i=0;
+		}
+		char c=o_bf[i];
+		i++;
+		while (1){
+			uint32_t sz=0;
+			while (c!='\r'){
+				sz=(sz<<4)|(c<58?c-48:(c<71?c-55:c-87));
+				if (i==o_bf_sz){
+					SSL_read_ex(ssl,o_bf,HTTP_REQUEST_BUFFER_SIZE,&o_bf_sz);
+					i=0;
+				}
+				c=o_bf[i];
+				i++;
+			}
+			if (i==o_bf_sz){
+				SSL_read_ex(ssl,o_bf,HTTP_REQUEST_BUFFER_SIZE,&o_bf_sz);
+				i=0;
+			}
+			i++;
+			if (!sz){
+				break;
+			}
+			ln+=sz;
+			o=realloc(o,(ln+1)*sizeof(char));
+			char* ptr=o+ln-sz;
+			uint32_t k=0;
+			while (k<sz){
+				uint32_t l=(uint32_t)(o_bf_sz-i>sz-k?sz-k:o_bf_sz-i);
+				memcpy(ptr+k,o_bf+i,l);
+				k+=l;
+				i+=l;
+				if (k<sz){
+					SSL_read_ex(ssl,o_bf,HTTP_REQUEST_BUFFER_SIZE,&o_bf_sz);
+					i=0;
+				}
+			}
+			if (i==o_bf_sz){
+				SSL_read_ex(ssl,o_bf,HTTP_REQUEST_BUFFER_SIZE,&o_bf_sz);
+				i=0;
+			}
+			c=o_bf[i];
+			i++;
+			while (c=='\r'||c=='\n'){
+				if (i==o_bf_sz){
+					SSL_read_ex(ssl,o_bf,HTTP_REQUEST_BUFFER_SIZE,&o_bf_sz);
+					i=0;
+				}
+				c=o_bf[i];
+				i++;
+			}
+		}
+		*(o+ln)=0;
+	}
+	else if (ln!=UINT32_MAX){
+		o=malloc((ln+1)*sizeof(char));
+		*(o+ln)=0;
+		uint32_t k=0;
+		while (k<ln){
+			uint32_t sz=(uint32_t)(o_bf_sz-i>ln-k?ln-k:o_bf_sz-i);
+			memcpy(o+k,o_bf+i,sz);
+			k+=sz;
+			if (k<ln){
+				SSL_read_ex(ssl,o_bf,HTTP_REQUEST_BUFFER_SIZE,&o_bf_sz);
+				i=0;
+			}
+		}
+	}
+	else{
+		printf("Unimplemented\n");
+		getchar();
+		ExitProcess(1);
+	}
+	closesocket(sck);
+	SSL_free(ssl);
+	SSL_CTX_free(ctx);
+	return o;
 }
 
 
@@ -1098,98 +1301,368 @@ uint8_t _download_url(const char* url,FILE* o,uint32_t t_sz){
 	else if (_cmp_str_len(url,"https://",8)){
 		url+=8;
 	}
-	uint32_t i=0;
-	while (*(url+i)!='/'){
+	char bf[4096]="GET ";
+	uint16_t i=0;
+	while (bf[i]){
 		i++;
 	}
-	wchar_t* ws=malloc((i+1)*sizeof(wchar_t));
-	for (uint32_t j=0;j<i;j++){
-		*(ws+j)=*(url+j);
+	char s[256];
+	uint16_t j=0;
+	while (*(url+j)!='/'){
+		s[j]=*(url+j);
+		j++;
 	}
-	*(ws+i)=0;
-	url+=i;
-	i=0;
-	while (*(url+i)){
-		i++;
+	s[j]=0;
+	i+=_copy_str(bf+i,url+j);
+	i+=_copy_str(bf+i," HTTP/1.1\r\nAccept: */*\r\nHost:");
+	i+=_copy_str(bf+i,s);
+	i+=_copy_str(bf+i,"\r\n\r\n");
+	ADDRINFOA h={
+		0,
+		AF_UNSPEC,
+		SOCK_STREAM,
+		IPPROTO_TCP,
+		0,
+		NULL,
+		NULL,
+		NULL
+	};
+	ADDRINFOA* addr=NULL;
+	if (getaddrinfo(s,"443",&h,&addr)){
+		return 0;
 	}
-	wchar_t* wp=malloc((i+1)*sizeof(wchar_t));
-	i=0;
-	while (*url){
-		*(wp+i)=*url;
-		url++;
-		i++;
-	}
-	*(wp+i)=0;
-	HINTERNET sh=NULL;
-	HINTERNET ch=NULL;
-	HINTERNET rh=NULL;
-	if (!(sh=WinHttpOpen(USER_AGENT_STRING,WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0))){
-		goto _error;
-	}
-	if (!(ch=WinHttpConnect(sh,ws,INTERNET_DEFAULT_HTTPS_PORT,0))){
-		goto _error;
-	}
-	free(ws);
-	ws=NULL;
-	if (!(rh=WinHttpOpenRequest(ch,L"GET",wp,NULL,WINHTTP_NO_REFERER,WINHTTP_DEFAULT_ACCEPT_TYPES,WINHTTP_FLAG_SECURE))){
-		goto _error;
-	}
-	free(wp);
-	wp=NULL;
-	if (!WinHttpSendRequest(rh,WINHTTP_NO_ADDITIONAL_HEADERS,0,WINHTTP_NO_REQUEST_DATA,0,0,0)||!WinHttpReceiveResponse(rh,NULL)){
-		goto _error;
-	}
-	uint8_t lp=0;
-	char bf[HTTP_REQUEST_BUFFER_SIZE];
-	uint32_t t=0;
-	if (t_sz){
-		PRINTF_TIME("\x1b[38;2;100;100;100m0%% Downloaded...\n");
-	}
-	while (1){
-		uint32_t sz;
-		if (!WinHttpQueryDataAvailable(rh,&sz)){
-			goto _error;
+	SOCKET sck;
+	ADDRINFOA* c=addr;
+	do{
+		sck=socket(c->ai_family,c->ai_socktype,c->ai_protocol);
+		if (sck==INVALID_SOCKET){
+			freeaddrinfo(addr);
+			return 0;
 		}
-		if (!sz){
+		if (connect(sck,c->ai_addr,(int)c->ai_addrlen)!=SOCKET_ERROR){
 			break;
 		}
-		if (sz>HTTP_REQUEST_BUFFER_SIZE){
-			sz=HTTP_REQUEST_BUFFER_SIZE;
+		closesocket(sck);
+		sck=INVALID_SOCKET;
+		c=c->ai_next;
+	} while (c);
+	freeaddrinfo(addr);
+	if (!c){
+		return 0;
+	}
+	SSL_CTX* ctx=SSL_CTX_new(TLS_client_method());
+	if (!ctx){
+		closesocket(sck);
+		return 0;
+	}
+	SSL* ssl=SSL_new(ctx);
+	if (!ssl){
+		closesocket(sck);
+		return 0;
+	}
+	SSL_set_fd(ssl,(int)sck);
+	if (SSL_connect(ssl)!=1){
+		closesocket(sck);
+		return 0;
+	}
+	SSL_write(ssl,bf,i);
+	char o_bf[HTTP_REQUEST_BUFFER_SIZE];
+	size_t o_bf_sz=0;
+	SSL_read_ex(ssl,o_bf,HTTP_REQUEST_BUFFER_SIZE,&o_bf_sz);
+	i=0;
+	uint8_t st=0;
+	char hk[4096];
+	uint16_t hkl=0;
+	char hv[4096];
+	uint16_t hvl=0;
+	uint32_t ln=UINT32_MAX;
+	uint8_t fl=0;
+	while (1){
+		if (i==o_bf_sz){
+			SSL_read_ex(ssl,o_bf,HTTP_REQUEST_BUFFER_SIZE,&o_bf_sz);
+			i=0;
 		}
-		t+=sz;
-		if (t_sz&&t*100/t_sz>lp){
-			lp=t*100/t_sz;
-			PRINTF_TIME("\x1b[38;2;100;100;100m%u%% Downloaded...\n",lp);
+		char c=o_bf[i];
+		i++;
+		if (c=='\r'||c=='\n'){
+			if (st>4){
+				if (hkl==17&&_cmp_str_len_lower(hk,"transfer-encoding",17)){
+					if (hvl==7&&_cmp_str_len_lower(hv,"chunked",7)){
+						fl|=FLAG_CHUNKED_TRANSFER;
+					}
+					else{
+						fl&=~FLAG_CHUNKED_TRANSFER;
+					}
+				}
+				else if (hkl==14&&_cmp_str_len_lower(hk,"content-length",14)){
+					ln=0;
+					for (uint16_t k=0;k<hvl;k++){
+						ln=ln*10+(hv[k]-48);
+					}
+				}
+				hkl=0;
+				hvl=0;
+				st=1;
+			}
+			else{
+				st++;
+				if (st==4){
+					break;
+				}
+			}
 		}
-		uint32_t tmp;
-		if (!WinHttpReadData(rh,(LPVOID)bf,sz,&tmp)||fwrite(bf,sizeof(char),sz,o)!=sz){
-			goto _error;
+		else if (st==2){
+			hk[0]=c;
+			hkl=1;
+			st=0;
+		}
+		else if (st==5&&(c==' '||c=='\t')){
+			continue;
+		}
+		else if (st>4){
+			st=6;
+			hv[hvl]=c;
+			hvl++;
+		}
+		else if (c==':'){
+			st=5;
+		}
+		else{
+			hk[hkl]=c;
+			hkl++;
 		}
 	}
-	if (t_sz){
-		PRINTF_TIME("\x1b[38;2;100;100;100m100%% Downloaded...\n");
+	if (fl&FLAG_CHUNKED_TRANSFER){
+		if (i==o_bf_sz){
+			SSL_read_ex(ssl,o_bf,HTTP_REQUEST_BUFFER_SIZE,&o_bf_sz);
+			i=0;
+		}
+		char c=o_bf[i];
+		i++;
+		while (1){
+			uint32_t sz=0;
+			while (c!='\r'){
+				sz=(sz<<4)|(c<58?c-48:(c<71?c-55:c-87));
+				if (i==o_bf_sz){
+					SSL_read_ex(ssl,o_bf,HTTP_REQUEST_BUFFER_SIZE,&o_bf_sz);
+					i=0;
+				}
+				c=o_bf[i];
+				i++;
+			}
+			if (i==o_bf_sz){
+				SSL_read_ex(ssl,o_bf,HTTP_REQUEST_BUFFER_SIZE,&o_bf_sz);
+				i=0;
+			}
+			i++;
+			if (!sz){
+				break;
+			}
+			uint32_t k=0;
+			while (k<sz){
+				uint32_t l=(uint32_t)(o_bf_sz-i>sz-k?sz-k:o_bf_sz-i);
+				fwrite(o_bf+i,sizeof(char),l,o);
+				k+=l;
+				i+=l;
+				if (k<sz){
+					SSL_read_ex(ssl,o_bf,HTTP_REQUEST_BUFFER_SIZE,&o_bf_sz);
+					i=0;
+				}
+			}
+			if (i==o_bf_sz){
+				SSL_read_ex(ssl,o_bf,HTTP_REQUEST_BUFFER_SIZE,&o_bf_sz);
+				i=0;
+			}
+			c=o_bf[i];
+			i++;
+			while (c=='\r'||c=='\n'){
+				if (i==o_bf_sz){
+					SSL_read_ex(ssl,o_bf,HTTP_REQUEST_BUFFER_SIZE,&o_bf_sz);
+					i=0;
+				}
+				c=o_bf[i];
+				i++;
+			}
+		}
 	}
-	WinHttpCloseHandle(sh);
-	WinHttpCloseHandle(ch);
-	WinHttpCloseHandle(rh);
+	else if (ln!=UINT32_MAX){
+		uint32_t k=0;
+		while (k<ln){
+			uint32_t sz=(uint32_t)(o_bf_sz-i>ln-k?ln-k:o_bf_sz-i);
+			fwrite(o_bf+i,sizeof(char),sz,o);
+			k+=sz;
+			if (k<ln){
+				SSL_read_ex(ssl,o_bf,HTTP_REQUEST_BUFFER_SIZE,&o_bf_sz);
+				i=0;
+			}
+		}
+	}
+	else{
+		printf("Unimplemented\n");
+		getchar();
+		ExitProcess(1);
+	}
+	closesocket(sck);
+	SSL_free(ssl);
+	SSL_CTX_free(ctx);
 	return 1;
-_error:
-	if (ws){
-		free(ws);
+}
+
+
+
+char* _github_api_request(const char* m,const char* url,const char* dt){
+	FILETIME s;
+	GetSystemTimeAsFileTime(&s);
+	string_32bit_t str={
+		0,
+		(char*)dt
+	};
+	while (*(dt+str.l)){
+		str.l++;
 	}
-	if (wp){
-		free(wp);
+	char* o=_request_url(m,url,&str,FLAG_ACCEPT_GITHUB|FLAG_GITHUB_TOKEN);
+	FILETIME e;
+	GetSystemTimeAsFileTime(&e);
+	uint32_t tm=(e.dwLowDateTime-s.dwLowDateTime)/10000;
+	if (tm<3600000/GITHUB_API_QUOTA){
+		Sleep(3600000/GITHUB_API_QUOTA-tm);
 	}
-	if (sh){
-		WinHttpCloseHandle(sh);
+	return o;
+}
+
+
+
+void _parse_gitingore_file(const char* fp,gitignore_file_data_t* o){
+	FILE* f=fopen(fp,"rb");
+	char c=fgetc(f);
+	while (c!=EOF){
+		while (c==' '||c=='\t'||c=='\r'||c=='\n'){
+			c=fgetc(f);
+		}
+		if (c==EOF){
+			break;
+		}
+		if (c=='#'){
+			while (c!='\r'&&c!='\n'){
+				c=fgetc(f);
+			}
+			continue;
+		}
+		uint8_t fl=0;
+		if (c=='!'){
+			fl|=FLAG_INVERT;
+			c=fgetc(f);
+		}
+		if (c==EOF){
+			break;
+		}
+		char bf[4096];
+		uint16_t i=0;
+		while (c!=EOF&&c!='\r'&&c!='\n'){
+			bf[i]=(c=='\\'?'/':c);
+			i++;
+			c=fgetc(f);
+		}
+		while (i&&(bf[i-1]==' '||bf[i-1]=='\t')){
+			i--;
+		}
+		if (!i){
+			break;
+		}
+		bf[i]=0;
+		uint16_t j=i;
+		while (j){
+			j--;
+			if (j>1&&bf[j]=='/'&&bf[j-1]=='*'&&bf[j-2]=='*'){
+				for (uint16_t k=j+1;k<i;k++){
+					bf[k-3]=bf[k];
+				}
+				j-=3;
+				i-=3;
+				bf[i]=0;
+			}
+			if (bf[j]=='/'){
+				printf("Pattern: %s %u\n",bf+j+1,fl);
+				bf[j]=0;
+				i=j;
+			}
+		}
+		printf("Pattern: %s %u\n",bf,fl);
+		if (c==EOF){
+			break;
+		}
+		c=fgetc(f);
 	}
-	if (ch){
-		WinHttpCloseHandle(ch);
+	fclose(f);
+}
+
+
+
+void _push_github_project(string_8bit_t* fp,expand_data_t* e_dt){
+	github_branch_t* bl=NULL;
+	uint16_t bll=0;
+	if (GetFileAttributesA(GITHUB_PROJECT_BRANCH_LIST_FILE_PATH)!=INVALID_FILE_ATTRIBUTES){
+		FILE* f=fopen(GITHUB_PROJECT_BRANCH_LIST_FILE_PATH,"rb");
+		bll=(fgetc(f)<<8)|fgetc(f);
+		bl=malloc(bll*sizeof(github_branch_t));
+		for (uint16_t i=0;i<bll;i++){
+			(bl+i)->nm.l=fgetc(f);
+			(bl+i)->b.l=fgetc(f);
+			fread((bl+i)->nm.v,sizeof(char),(bl+i)->nm.l,f);
+			fread((bl+i)->b.v,sizeof(char),(bl+i)->b.l,f);
+			(bl+i)->nm.v[(bl+i)->nm.l]=0;
+			(bl+i)->b.v[(bl+i)->b.l]=0;
+		}
+		fclose(f);
 	}
-	if (rh){
-		WinHttpCloseHandle(rh);
+	uint8_t cr=1;
+	char* br=GITHUB_DEFAULT_BRANCH_NAME;
+	for (uint16_t i=0;i<bll;i++){
+		if (_cmp_str_len_lower((bl+i)->nm.v,e_dt->e.fp,(bl+i)->nm.l+1)){
+			br=(bl+i)->b.v;
+			cr=0;
+			break;
+		}
 	}
-	return 0;
+	if (cr){
+		PRINTF_TIME("\x1b[38;2;100;100;100mCreating Project \x1b[38;2;65;118;46m'%s'\x1b[38;2;100;100;100m...\n",e_dt->e.fp);
+		char bf[4096]="{\"name\":\"";
+		uint16_t i=0;
+		while (bf[i]){
+			i++;
+		}
+		uint8_t sz=_copy_str(bf+i,e_dt->e.fp);
+		i+=sz;
+		i+=_copy_str(bf+i,"\",\"description\":\"");
+		i+=_copy_str(bf+i,e_dt->t);
+		bf[i]='\"';
+		bf[i+1]='}';
+		bf[i+2]=0;
+		free(_github_api_request("POST","https://api.github.com/user/repos",bf));
+		bll++;
+		bl=realloc(bl,bll*sizeof(github_branch_t));
+		(bl+bll-1)->nm.l=sz;
+		_copy_str((bl+bll-1)->nm.v,e_dt->e.fp);
+		(bl+bll-1)->nm.v[(bl+bll-1)->nm.l]=0;
+		(bl+bll-1)->b.l=_copy_str((bl+bll-1)->b.v,GITHUB_DEFAULT_BRANCH_NAME);
+		(bl+bll-1)->b.v[(bl+bll-1)->b.l]=0;
+	}
+	fp->v[fp->l+_copy_str(fp->v+fp->l,".gitignore")]=0;
+	gitignore_file_data_t gdt;
+	_parse_gitingore_file(fp->v,&gdt);
+	if (cr){
+		FILE* f=fopen(GITHUB_PROJECT_BRANCH_LIST_FILE_PATH,"wb");
+		fputc(bll>>8,f);
+		fputc(bll&0xff,f);
+		for (uint16_t j=0;j<bll;j++){
+			fputc((bl+j)->nm.l,f);
+			fputc((bl+j)->b.l,f);
+			fwrite((bl+j)->nm.v,sizeof(char),(bl+j)->nm.l,f);
+			fwrite((bl+j)->b.v,sizeof(char),(bl+j)->b.l,f);
+		}
+		fclose(f);
+	}
+	free(bl);
 }
 
 
@@ -1280,6 +1753,19 @@ LRESULT CALLBACK _screen_blocker_wnd_proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp
 
 
 int WinMain(HINSTANCE hi,HINSTANCE p_hi,LPSTR cmd,int sw){
+	if (GetFileAttributesA(__FILE_BASE_DIR__"/data/")==INVALID_FILE_ATTRIBUTES){
+		CreateDirectoryA(__FILE_BASE_DIR__"/data/",NULL);
+	}
+	SSL_load_error_strings();
+	SSL_library_init();
+	OpenSSL_add_all_algorithms();
+	if (WSAStartup(MAKEWORD(2,2),&_ws_dt)){
+		_console();
+		printf("WinSock Fail!\n");
+		getchar();
+		ExitProcess(1);
+	}
+	atexit(WSACleanup);
 	uint8_t fl=0;
 	char argv_bf[4096];
 	uint32_t i=0;
@@ -1593,7 +2079,7 @@ int WinMain(HINSTANCE hi,HINSTANCE p_hi,LPSTR cmd,int sw){
 				GetConsoleCursorInfo(ho,&ci);
 				ci.bVisible=0;
 				SetConsoleCursorInfo(ho,&ci);
-				program_type_t tl[256];
+				project_type_t tl[256];
 				uint8_t tll=0;
 				WIN32_FIND_DATAA dt;
 				HANDLE fh=FindFirstFileA(PROJECT_DIR"/*",&dt);
@@ -1713,7 +2199,7 @@ _insert_elem:;
 						}
 						else if (fl&FLAG_ASK_CREATE){
 							if (k=='Y'||k=='y'){
-								_create_program(&p_t,&p_nm,FLAG_OPEN);
+								_create_project(&p_t,&p_nm,FLAG_OPEN);
 								break;
 							}
 							fl^=FLAG_UPDATE|FLAG_ASK_CREATE;
@@ -1735,7 +2221,7 @@ _insert_elem:;
 							}
 						}
 						else if (k==VK_TAB){
-							program_type_t pt={0};
+							project_type_t pt={0};
 							if (!p_t.l){
 								for (uint8_t i=0;i<tl[0].l+1;i++){
 									*(p_t.v+i)=*(tl[0].v+i);
@@ -1784,11 +2270,11 @@ _insert_elem:;
 						}
 						else if (k==VK_RETURN){
 							if (p_t.l==4&&_cmp_str_len_lower(p_t.v,b_str,4)){
-								_create_program(NULL,NULL,FLAG_OPEN);
+								_create_project(NULL,NULL,FLAG_OPEN);
 								break;
 							}
 							for (uint8_t i=0;i<tll;i++){
-								program_type_t e=tl[i];
+								project_type_t e=tl[i];
 								if (e.l!=p_t.l||!_cmp_str_len_lower(e.v,p_t.v,p_t.l)){
 									continue;
 								}
@@ -1796,7 +2282,7 @@ _insert_elem:;
 									if ((e.e+j)->l!=p_nm.l||!_cmp_str_len_lower((e.e+j)->v,p_nm.v,p_nm.l)){
 										continue;
 									}
-									_create_program(&p_t,&p_nm,FLAG_OPEN);
+									_create_project(&p_t,&p_nm,FLAG_OPEN);
 									goto _cleanup_project_list;
 								}
 								fl|=FLAG_UPDATE|FLAG_ASK_CREATE;
@@ -1839,7 +2325,7 @@ _insert_elem:;
 					if (fl&FLAG_UPDATE){
 						char* pr_t="";
 						uint8_t pr_tl=0;
-						program_type_t pt={0};
+						project_type_t pt={0};
 						if (!p_t.l){
 							pr_t=tl[0].v;
 							pr_tl=tl[0].l;
@@ -1896,12 +2382,102 @@ _cleanup_project_list:
 				return 0;
 			}
 		case 4:
-			_move_to_desktop(_console(),2);
-			for (uint32_t i=0;i<argc;i++){
-				printf("%u: %s\n",i,argv[i]);
+			{
+				HWND hwnd=_console();
+				if (argc==2||(argv[2][0]=='*'&&!argv[2][1])){
+					// _move_to_desktop(hwnd,2);
+					if (getenv("DISABLE_BULK_PROJECT_PUSH")){
+						PRINTF_TIME("\x1b[38;2;200;40;20mProject Push Diabled.\n");
+						getchar();
+						return 0;
+					}
+					string_8bit_t* fl=NULL;
+					uint16_t fll=0;
+					if (argc==2){
+						if (GetFileAttributesA(GITHUB_PUSHED_PROJECT_LIST_FILE_PATH)!=INVALID_FILE_ATTRIBUTES){
+							FILE* f=fopen(GITHUB_PUSHED_PROJECT_LIST_FILE_PATH,"rb");
+							fll=(fgetc(f)<<8)|fgetc(f);
+							fl=malloc(fll*sizeof(string_8bit_t));
+							for (uint16_t i=0;i<fll;i++){
+								(fl+i)->l=fgetc(f);
+								fread((fl+i)->v,sizeof(char),(fl+i)->l,f);
+								(fl+i)->v[(fl+i)->l]=0;
+							}
+							fclose(f);
+						}
+					}
+					WIN32_FIND_DATAA dt;
+					HANDLE fh=FindFirstFileA(PROJECT_DIR"/*",&dt);
+					if (fh!=INVALID_HANDLE_VALUE){
+						do{
+							if (dt.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY){
+								if (*(dt.cFileName)=='.'&&(*(dt.cFileName+1)==0||(*(dt.cFileName+1)=='.'&&*(dt.cFileName+2)==0))){
+									continue;
+								}
+								for (uint16_t i=0;i<fll;i++){
+									if (_cmp_str_len_lower((fl+i)->v,dt.cFileName,(fl+i)->l+1)){
+										goto _push_next_project;
+									}
+								}
+								char t[256];
+								uint8_t i=0;
+								while (*(dt.cFileName+i)!='-'){
+									if (!(*(dt.cFileName+i))){
+										goto _push_next_project;
+									}
+									t[i]=*(dt.cFileName+i);
+									i++;
+								}
+								t[i]=0;
+								expand_data_t e_dt;
+								_generate_expand_data(&e_dt,t,dt.cFileName+i+1);
+								string_8bit_t fp={
+									0,
+									PROJECT_DIR"/"
+								};
+								while (fp.v[fp.l]){
+									fp.l++;
+								}
+								uint8_t sz=_copy_str(fp.v+fp.l,dt.cFileName);
+								fp.l+=sz;
+								fp.v[fp.l]='/';
+								fp.l++;
+								fp.v[fp.l]=0;
+								_copy_str(e_dt.e.fp,dt.cFileName);
+								e_dt.e.fp[sz]=0;
+								_push_github_project(&fp,&e_dt);
+								fll++;
+								fl=realloc(fl,fll*sizeof(string_8bit_t));
+								(fl+fll-1)->l=sz;
+								_copy_str((fl+fll-1)->v,dt.cFileName);
+								(fl+fll-1)->v[(fl+fll-1)->l]=0;
+_push_next_project:;
+							}
+						} while (FindNextFileA(fh,&dt));
+						FindClose(fh);
+						FILE* f=fopen(GITHUB_PUSHED_PROJECT_LIST_FILE_PATH,"wb");
+						fputc(fll>>8,f);
+						fputc(fll&0xff,f);
+						for (uint16_t i=0;i<fll;i++){
+							fputc((fl+i)->l,f);
+							fwrite((fl+i)->v,sizeof(char),(fl+i)->l,f);
+						}
+						fclose(f);
+						free(fl);
+					}
+				}
+				else{
+					SetFocus(hwnd);
+					if (getenv("DISABLE_BULK_PROJECT_PUSH")){
+						PRINTF_TIME("\x1b[38;2;200;40;20mProject Push Diabled.\n");
+						getchar();
+						return 0;
+					}
+					printf("Push: %s\n",argv[2]);
+				}
+				getchar();
+				return 0;
 			}
-			getchar();
-			return 0;
 		case 7:
 			{
 				_move_to_desktop(_console(),2);
@@ -1915,29 +2491,29 @@ _cleanup_project_list:
 				json_object_t json={
 					JSON_OBJECT_TYPE_NULL
 				};
-				string_32bit_t dt;
-				if (!_request("launchermeta.mojang.com","GET","/mc/game/version_manifest.json",&dt)){
+				char* dt;
+				if (!(dt=_request_url("GET","launchermeta.mojang.com/mc/game/version_manifest.json",NULL,FLAG_ACCEPT_JSON))){
 					goto _skip_update;
 				}
-				json_parser_state_t p=dt.v;
+				json_parser_state_t p=dt;
 				if (_parse_json(&p,&json)){
-					free(dt.v);
+					free(dt);
 					goto _skip_update;
 				}
-				free(dt.v);
+				free(dt);
 				string_32bit_t url=_get_by_key(_get_by_key(&json,"versions")->dt.a.dt,"url")->dt.s;
 				PRINTF_TIME("Downloading Release Data From URL \x1b[38;2;91;216;38m'%s'\x1b[38;2;100;100;100m...\n",url.v);
-				if (!_request_url("GET",url.v,&dt)){
+				if (!(dt=_request_url("GET",url.v,NULL,FLAG_ACCEPT_JSON))){
 					goto _skip_update;
 				}
 				_free_json(&json);
 				json.t=JSON_OBJECT_TYPE_NULL;
-				p=dt.v;
+				p=dt;
 				if (_parse_json(&p,&json)){
-					free(dt.v);
+					free(dt);
 					goto _skip_update;
 				}
-				free(dt.v);
+				free(dt);
 				json_object_t* s_dt=_get_by_key(_get_by_key(&json,"downloads"),"server");
 				uint32_t n_sz=(uint32_t)_get_by_key(s_dt,"size")->dt.i;
 				if (GetFileAttributesA(MINECRAFT_SERVER_FOLDER"server.jar")!=INVALID_FILE_ATTRIBUTES){
