@@ -46,6 +46,7 @@
 #define FLAG_DATA 1
 #define FLAG_DIRECTORY 2
 #define FLAG_EDIT_TYPE 4
+#define FLAG_FROM_ROOT 8
 #define FLAG_GITHUB_TOKEN 4
 #define FLAG_INITIALIZE 2
 #define FLAG_INVERT 1
@@ -60,31 +61,38 @@
 #define GITHUB_DEFAULT_BRANCH_NAME "main"
 #define GITHUB_HEADERS "application/vnd.github.v3+json"
 #define GITHUB_PROJECT_BRANCH_LIST_FILE_PATH __FILE_BASE_DIR__"/data/github-branches.dt"
+#define GITHUB_COMMIT_DATA_UPDATE_COUNT 0
+#define GITHUB_COMMIT_DATA_SKIP_COUNT 1
+#define GITHUB_COMMIT_DATA_IGNORE_COUNT 2
+#define GITHUB_COMMIT_DATA_DELETE_COUNT 3
 #define GITHUB_PUSHED_PROJECT_LIST_FILE_PATH __FILE_BASE_DIR__"/data/github.dt"
+#define GITHUB_USERNAME "krzem5"
+#define GITIGNORE_PATTERN_ELEMENT_CHAR_CLASS_CLASS_SIZE (256/(sizeof(uint64_t)*8))
+#define GITIGNORE_PATTERN_ELEMENT_TYPE_ANY 0
+#define GITIGNORE_PATTERN_ELEMENT_TYPE_ANY_STAR 1
+#define GITIGNORE_PATTERN_ELEMENT_TYPE_CHAR 2
+#define GITIGNORE_PATTERN_ELEMENT_TYPE_CHAR_CLASS 3
 #define GITIGNORE_START_MATCH_REGEX "[^!]"
 #define HOTKEY_HANDLER_END_MESSAGE (WM_USER+1)
 #define HTTP_REQUEST_BUFFER_SIZE 4096
-#define JSON_OBJECT_TYPE_NULL 0
+#define JSON_OBJECT_TYPE_ARRAY 0
 #define JSON_OBJECT_TYPE_FALSE 1
-#define JSON_OBJECT_TYPE_TRUE 2
+#define JSON_OBJECT_TYPE_FLOAT 2
 #define JSON_OBJECT_TYPE_INTEGER 3
-#define JSON_OBJECT_TYPE_STRING 4
-#define JSON_OBJECT_TYPE_FLOAT 5
-#define JSON_OBJECT_TYPE_ARRAY 6
-#define JSON_OBJECT_TYPE_MAP 7
+#define JSON_OBJECT_TYPE_MAP 4
+#define JSON_OBJECT_TYPE_NULL 5
+#define JSON_OBJECT_TYPE_STRING 6
+#define JSON_OBJECT_TYPE_TRUE 7
 #define MINECRAFT_JAVA_RUNTIME_FILE_PATH "C:/Program Files/Java/jdk-16.0.1/bin/java.exe"
 #define MINECRAFT_JAVA_RUNTIME_MEMORY "512M"
 #define MINECRAFT_LAUNCHER_FILE_PATH "C:/Program Files (x86)/Minecraft Launcher/MinecraftLauncher.exe"
 #define MINECRAFT_SERVER_FOLDER __FILE_BASE_DIR__"/mc_server/"
-#define PATTERN_ELEMENT_TYPE_CHAR 0
-#define PATTERN_ELEMENT_TYPE_CHAR_CLASS 1
-#define PATTERN_ELEMENT_CHAR_CLASS_CLASS_SIZE (256/(sizeof(uint64_t)*8))
 #define PROJECT_DIR "d:/k/code"
 #define ROOT_FILE_PATH "d:/k"
 #define SHA1_DATA_INIT {0x67452301,0xefcdab89,0x98badcfe,0x10325476,0xc3d2e1f0}
 #define TEMPLATES_FILE_PATH __FILE_BASE_DIR__"/templates"
 #define UPPER_KEY_MASK 255
-#define USER_AGENT_STRING WCHAR_STR("Boot Program Request API")
+#define USER_AGENT_STRING "Request API"
 
 
 
@@ -197,37 +205,36 @@ typedef struct __GITHUB_BRANCH{
 
 
 typedef struct __PATTERN_ELEMENT_DATA_CHARA_CLASS{
-	uint64_t dt[PATTERN_ELEMENT_CHAR_CLASS_CLASS_SIZE];
-} pattern_element_data_chara_class_t;
+	uint64_t dt[GITIGNORE_PATTERN_ELEMENT_CHAR_CLASS_CLASS_SIZE];
+} gitignore_pattern_element_data_chara_class_t;
 
 
 
 typedef union __PATTERN_ELEMENT_DATA{
 	char c;
-	pattern_element_data_chara_class_t cc;
-} pattern_element_data_t;
+	gitignore_pattern_element_data_chara_class_t cc;
+} gitignore_pattern_element_data_t;
 
 
 
 typedef struct __PATTERN_ELEMENT{
 	uint8_t t;
-	uint8_t fl;
-	pattern_element_data_t dt;
-} pattern_element_t;
+	gitignore_pattern_element_data_t dt;
+} gitignore_pattern_element_t;
 
 
 
 typedef struct __PATTERN{
 	uint16_t sz;
-	pattern_element_t* dt;
-} pattern_t;
+	gitignore_pattern_element_t* dt;
+} gitignore_pattern_t;
 
 
 
 typedef struct __GITIGNORE_FILE_DATA_PATTERN{
 	uint8_t fl;
 	uint16_t sz;
-	pattern_t* dt;
+	gitignore_pattern_t* dt;
 } gitignore_file_data_pattern_t;
 
 
@@ -236,6 +243,39 @@ typedef struct __GITIGNORE_FILE_DATA{
 	uint16_t sz;
 	gitignore_file_data_pattern_t* dt;
 } gitignore_file_data_t;
+
+
+
+typedef struct __GITHUB_DIRECTORY_TREE_DATA{
+	char nm[256];
+	uint32_t sz;
+	char sha[41];
+} github_directory_tree_data_t;
+
+
+
+typedef struct __GITHUB_DIRECTORY_TREE{
+	uint32_t sz;
+	github_directory_tree_data_t* dt;
+} github_directory_tree_t;
+
+
+
+typedef struct __GITHUB_COMMIT_DATA_FILE{
+	char fp[256];
+	char* dt;
+} github_commit_data_file_t;
+
+
+
+typedef struct __GITHUB_COMMIT_DATA{
+	uint8_t fp_s;
+	uint32_t cnt[4];
+	uint32_t sz;
+	github_commit_data_file_t* dt;
+	const char* msg;
+	const char* nm;
+} github_commit_data_t;
 
 
 
@@ -522,7 +562,7 @@ uint8_t _cmp_hash(sha1_data_t* h,const char* s){
 
 
 
-uint8_t _parse_json_str(json_parser_state_t* p,string_32bit_t* o){
+void _parse_json_str(json_parser_state_t* p,string_32bit_t* o){
 	o->l=1;
 	o->v=malloc(sizeof(char));
 	*(o->v)=0;
@@ -587,7 +627,6 @@ uint8_t _parse_json_str(json_parser_state_t* p,string_32bit_t* o){
 	}
 	o->l--;
 	*(o->v+o->l)=0;
-	return 0;
 }
 
 
@@ -608,9 +647,7 @@ uint8_t _parse_json(json_parser_state_t* p,json_object_t* o){
 			o->dt.m.l++;
 			o->dt.m.dt=realloc(o->dt.m.dt,o->dt.m.l*sizeof(json_map_keypair_t));
 			json_map_keypair_t* k=o->dt.m.dt+o->dt.m.l-1;
-			if (_parse_json_str(p,&(k->k))){
-				return 1;
-			}
+			_parse_json_str(p,&(k->k));
 			c=JSON_PARSER_NEXT_CHAR(p);
 			while (c!=':'){
 				c=JSON_PARSER_NEXT_CHAR(p);
@@ -648,7 +685,8 @@ uint8_t _parse_json(json_parser_state_t* p,json_object_t* o){
 	}
 	if (c=='\"'){
 		o->t=JSON_OBJECT_TYPE_STRING;
-		return _parse_json_str(p,&(o->dt.s));
+		_parse_json_str(p,&(o->dt.s));
+		return 0;
 	}
 	if (c=='t'&&_cmp_str_len(*p,"rue",3)){
 		(*p)+=3;
@@ -1097,7 +1135,7 @@ char* _request_url(const char* m,const char* url,const string_32bit_t* dt,uint8_
 	}
 	s[j]=0;
 	i+=_copy_str(bf+i,url+j);
-	i+=_copy_str(bf+i," HTTP/1.1\r\nHost:");
+	i+=_copy_str(bf+i," HTTP/1.1\r\nUser-Agent:"USER_AGENT_STRING"\r\nHost:");
 	i+=_copy_str(bf+i,s);
 	if (dt){
 		i+=_copy_str(bf+i,"\r\nContent-Length:");
@@ -1172,11 +1210,13 @@ char* _request_url(const char* m,const char* url,const string_32bit_t* dt,uint8_
 	SSL_CTX* ctx=SSL_CTX_new(TLS_client_method());
 	if (!ctx){
 		closesocket(sck);
+		printf("%u\n",__LINE__);
 		return NULL;
 	}
 	SSL* ssl=SSL_new(ctx);
 	if (!ssl){
 		closesocket(sck);
+		printf("%u\n",__LINE__);
 		return NULL;
 	}
 	SSL_set_fd(ssl,(int)sck);
@@ -1328,9 +1368,20 @@ char* _request_url(const char* m,const char* url,const string_32bit_t* dt,uint8_
 		}
 	}
 	else{
-		printf("Unimplemented\n");
-		getchar();
-		ExitProcess(1);
+		o=malloc(sizeof(char));
+		ln=0;
+		while (1){
+			o=realloc(o,(ln+o_bf_sz-i+1)*sizeof(char));
+			memcpy(o+ln,o_bf+i,o_bf_sz-i);
+			ln+=(uint32_t)(o_bf_sz-i);
+			o_bf_sz=0;
+			SSL_read_ex(ssl,o_bf,HTTP_REQUEST_BUFFER_SIZE,&o_bf_sz);
+			if (!o_bf_sz){
+				break;
+			}
+			i=0;
+		}
+		*(o+ln)=0;
 	}
 	closesocket(sck);
 	SSL_free(ssl);
@@ -1556,54 +1607,22 @@ uint8_t _download_url(const char* url,FILE* o,uint32_t t_sz){
 
 
 
-char* _github_api_request(const char* m,const char* url,const char* dt){
-	FILETIME s;
-	GetSystemTimeAsFileTime(&s);
-	string_32bit_t str={
-		0,
-		(char*)dt
-	};
-	while (*(dt+str.l)){
-		str.l++;
-	}
-	char* o=_request_url(m,url,&str,FLAG_ACCEPT_GITHUB|FLAG_GITHUB_TOKEN);
-	FILETIME e;
-	GetSystemTimeAsFileTime(&e);
-	uint32_t tm=(e.dwLowDateTime-s.dwLowDateTime)/10000;
-	if (tm<3600000/GITHUB_API_QUOTA){
-		Sleep(3600000/GITHUB_API_QUOTA-tm);
-	}
-	return o;
-}
-
-
-
-void _parse_fnmatch_pattern(const char* dt,pattern_t* o){
+void _parse_fnmatch_pattern(const char* dt,gitignore_pattern_t* o){
 	o->sz=0;
 	o->dt=NULL;
 	while (*dt){
 		o->sz++;
-		o->dt=realloc(o->dt,o->sz*sizeof(pattern_element_t));
-		pattern_element_t* e=o->dt+o->sz-1;
-		e->fl=0;
+		o->dt=realloc(o->dt,o->sz*sizeof(gitignore_pattern_element_t));
+		gitignore_pattern_element_t* e=o->dt+o->sz-1;
 		if (*dt=='?'){
-			e->t=PATTERN_ELEMENT_TYPE_CHAR_CLASS;
-			e->dt.cc.dt[0]=0xffff7fffffffffff;
-			for (uint8_t i=1;i<PATTERN_ELEMENT_CHAR_CLASS_CLASS_SIZE;i++){
-				e->dt.cc.dt[i]=0xffffffffffffffff;
-			}
+			e->t=GITIGNORE_PATTERN_ELEMENT_TYPE_ANY;
 		}
 		else if (*dt=='*'){
-			e->t=PATTERN_ELEMENT_TYPE_CHAR_CLASS;
-			e->fl=FLAG_ZERO_OR_MORE;
-			e->dt.cc.dt[0]=0xffff7fffffffffff;
-			for (uint8_t i=1;i<PATTERN_ELEMENT_CHAR_CLASS_CLASS_SIZE;i++){
-				e->dt.cc.dt[i]=0xffffffffffffffff;
-			}
+			e->t=GITIGNORE_PATTERN_ELEMENT_TYPE_ANY_STAR;
 		}
 		else if (*dt=='['){
-			e->t=PATTERN_ELEMENT_TYPE_CHAR_CLASS;
-			for (uint8_t i=0;i<PATTERN_ELEMENT_CHAR_CLASS_CLASS_SIZE;i++){
+			e->t=GITIGNORE_PATTERN_ELEMENT_TYPE_CHAR_CLASS;
+			for (uint8_t i=0;i<GITIGNORE_PATTERN_ELEMENT_CHAR_CLASS_CLASS_SIZE;i++){
 				e->dt.cc.dt[i]=0;
 			}
 			dt++;
@@ -1628,20 +1647,21 @@ void _parse_fnmatch_pattern(const char* dt,pattern_t* o){
 					e->dt.cc.dt[c>>6]|=1ull<<(c&0x3f);
 				}
 			} while (*dt!=']');
+			e->dt.cc.dt[1]|=(e->dt.cc.dt[1]&0x7fffffe00000000)>>32;
 			if (inv){
-				for (uint8_t i=0;i<PATTERN_ELEMENT_CHAR_CLASS_CLASS_SIZE;i++){
+				for (uint8_t i=0;i<GITIGNORE_PATTERN_ELEMENT_CHAR_CLASS_CLASS_SIZE;i++){
 					e->dt.cc.dt[i]^=0xffffffffffffffff;
 				}
 			}
 		}
 		else if (*dt=='\\'){
 			dt++;
-			e->t=PATTERN_ELEMENT_TYPE_CHAR;
-			e->dt.c=*dt;
+			e->t=GITIGNORE_PATTERN_ELEMENT_TYPE_CHAR;
+			e->dt.c=(*dt>96&&*dt<123?(*dt)-32:*dt);
 		}
 		else{
-			e->t=PATTERN_ELEMENT_TYPE_CHAR;
-			e->dt.c=*dt;
+			e->t=GITIGNORE_PATTERN_ELEMENT_TYPE_CHAR;
+			e->dt.c=(*dt>96&&*dt<123?(*dt)-32:*dt);
 		}
 		dt++;
 	}
@@ -1649,7 +1669,7 @@ void _parse_fnmatch_pattern(const char* dt,pattern_t* o){
 
 
 
-void _free_pattern(pattern_t* p){
+void _free_pattern(gitignore_pattern_t* p){
 	if (p->dt){
 		free(p->dt);
 	}
@@ -1716,6 +1736,13 @@ void _parse_gitingore_file(const char* fp,gitignore_file_data_t* o){
 				bf[j]=bf[j+3];
 			}
 		}
+		while (i&&bf[0]=='/'){
+			fl|=FLAG_FROM_ROOT;
+			i--;
+			for (uint16_t j=0;j<i;j++){
+				bf[j]=bf[j+1];
+			}
+		}
 		if (!i){
 			break;
 		}
@@ -1755,8 +1782,8 @@ void _parse_gitingore_file(const char* fp,gitignore_file_data_t* o){
 				}
 			}
 		}
-		e->dt=malloc(e->sz*sizeof(pattern_t));
-		pattern_t* k=e->dt;
+		e->dt=malloc(e->sz*sizeof(gitignore_pattern_t));
+		gitignore_pattern_t* k=e->dt;
 		j=0;
 		do{
 			_parse_fnmatch_pattern(bf+j,k);
@@ -1792,7 +1819,172 @@ void _free_gitignore_data(gitignore_file_data_t* gdt){
 
 
 
-void _push_github_project(string_8bit_t* fp,expand_data_t* e_dt){
+char* _github_api_request(const char* m,const char* url,const char* dt){
+	FILETIME s;
+	GetSystemTimeAsFileTime(&s);
+	string_32bit_t str={
+		0,
+		(char*)dt
+	};
+	if (dt){
+		while (*(dt+str.l)){
+			str.l++;
+		}
+	}
+	char* o=_request_url(m,url,&str,FLAG_ACCEPT_GITHUB|FLAG_GITHUB_TOKEN);
+	FILETIME e;
+	GetSystemTimeAsFileTime(&e);
+	uint32_t tm=(e.dwLowDateTime-s.dwLowDateTime)/10000;
+	if (tm<3600000/GITHUB_API_QUOTA){
+		Sleep(3600000/GITHUB_API_QUOTA-tm);
+	}
+	return o;
+}
+
+
+
+uint8_t _match_gitignore_pattern(const gitignore_pattern_element_t* p,uint32_t sz,const char* str){
+	if (!sz){
+		return !(*str);
+	}
+	if (p->t==GITIGNORE_PATTERN_ELEMENT_TYPE_CHAR){
+		return (*str!=p->dt.c?0:_match_gitignore_pattern(p+1,sz-1,str+1));
+	}
+	if (p->t==GITIGNORE_PATTERN_ELEMENT_TYPE_ANY){
+		return _match_gitignore_pattern(p+1,sz-1,str+1);
+	}
+	if (p->t==GITIGNORE_PATTERN_ELEMENT_TYPE_ANY_STAR){
+		if (sz==1){
+			return 1;
+		}
+		while (*str){
+			if (_match_gitignore_pattern(p+1,sz-1,str)){
+				return 1;
+			}
+			str++;
+		}
+		return 0;
+	}
+	return (p->dt.cc.dt[(*str)>>6]&(1ull<<((*str)&0x3f))?_match_gitignore_pattern(p+1,sz-1,str+1):0);
+}
+
+
+
+void _create_commit(string_8bit_t* fp,const github_directory_tree_t* r_t,const gitignore_file_data_t* gdt,github_commit_data_t* o){
+	fp->v[fp->l]='*';
+	fp->v[fp->l+1]=0;
+	WIN32_FIND_DATAA dt;
+	HANDLE* fh=FindFirstFileA(fp->v,&dt);
+	if (fh!=INVALID_HANDLE_VALUE){
+		do{
+			if (dt.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY){
+				continue;
+			}
+			char tmp[256];
+			uint8_t sz=fp->l+_copy_str(fp->v+fp->l,dt.cFileName);
+			fp->v[sz]=0;
+			uint8_t l=1;
+			for (uint8_t i=o->fp_s;i<sz;i++){
+				if (fp->v[i]=='/'){
+					tmp[i-o->fp_s]=0;
+					l++;
+				}
+				else{
+					tmp[i-o->fp_s]=(fp->v[i]>96&&fp->v[i]<123?fp->v[i]-32:fp->v[i]);
+				}
+			}
+			tmp[sz-o->fp_s]=0;
+			uint8_t ig=0;
+			for (uint16_t i=0;i<gdt->sz;i++){
+				gitignore_file_data_pattern_t* f_dt_p=gdt->dt+i;
+				if ((!ig||(f_dt_p->fl&FLAG_INVERT))&&f_dt_p->sz<=l){
+					if (f_dt_p->fl&FLAG_FROM_ROOT){
+						char* k=tmp;
+						for (uint16_t j=0;j<f_dt_p->sz;j++){
+							if (j){
+								while (*k){
+									k++;
+								}
+								k++;
+							}
+							if (!_match_gitignore_pattern((f_dt_p->dt+j)->dt,(f_dt_p->dt+j)->sz,k)){
+								goto _check_next_pattern;
+							}
+						}
+						if (f_dt_p->fl&FLAG_INVERT){
+							goto _check_file_hash;
+						}
+						ig=1;
+					}
+					else{
+						for (uint16_t j=0;j<=l-f_dt_p->sz;j++){
+							char* e=tmp;
+							for (uint16_t k=0;k<j;k++){
+								while (*e){
+									e++;
+								}
+								e++;
+							}
+							for (uint16_t k=0;k<f_dt_p->sz;k++){
+								if (k){
+									while (*e){
+										e++;
+									}
+									e++;
+								}
+								if (!_match_gitignore_pattern((f_dt_p->dt+k)->dt,(f_dt_p->dt+k)->sz,e)){
+									goto _check_next_pattern_length;
+								}
+							}
+							if (f_dt_p->fl&FLAG_INVERT){
+								goto _check_file_hash;
+							}
+							ig=1;
+							break;
+_check_next_pattern_length:;
+						}
+					}
+				}
+_check_next_pattern:;
+			}
+			if (ig){
+				o->cnt[GITHUB_COMMIT_DATA_IGNORE_COUNT]++;
+				PRINTF_TIME("\x1b[38;2;190;0;220m! %s/%s\n",o->nm,fp->v+o->fp_s);
+				continue;
+			}
+_check_file_hash:
+			printf("\x1b[0mCheck: %s\n",fp->v+o->fp_s);
+		} while (FindNextFileA(fh,&dt));
+		FindClose(fh);
+	}
+	fp->v[fp->l]='*';
+	fp->v[fp->l+1]=0;
+	fh=FindFirstFileA(fp->v,&dt);
+	if (fh!=INVALID_HANDLE_VALUE){
+		do{
+			if (dt.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY){
+				if (*(dt.cFileName)=='.'&&(*(dt.cFileName+1)==0||(*(dt.cFileName+1)=='.'&&*(dt.cFileName+2)==0))){
+					continue;
+				}
+				uint8_t fpl=fp->l;
+				fp->l+=_copy_str(fp->v+fp->l,dt.cFileName);
+				fp->v[fp->l]='/';
+				fp->l++;
+				_create_commit(fp,r_t,gdt,o);
+				fp->l=fpl;
+			}
+		} while (FindNextFileA(fh,&dt));
+		FindClose(fh);
+	}
+}
+
+
+
+void _push_github_project(string_8bit_t* fp,const expand_data_t* e_dt){
+	if (fp->v[fp->l-1]!='/'){
+		fp->v[fp->l]='/';
+		fp->l++;
+	}
 	github_branch_t* bl=NULL;
 	uint16_t bll=0;
 	if (GetFileAttributesA(GITHUB_PROJECT_BRANCH_LIST_FILE_PATH)!=INVALID_FILE_ATTRIBUTES){
@@ -1818,10 +2010,45 @@ void _push_github_project(string_8bit_t* fp,expand_data_t* e_dt){
 			break;
 		}
 	}
+	SYSTEMTIME tm;
+	GetLocalTime(&tm);
+	char msg[256]="Push Update ";
+	uint16_t i=0;
+	while (msg[i]){
+		i++;
+	}
+	msg[i]=tm.wDay/10+48;
+	msg[i+1]=(tm.wDay%10)+48;
+	msg[i+2]='/';
+	msg[i+3]=tm.wMonth/10+48;
+	msg[i+4]=(tm.wMonth%10)+48;
+	msg[i+5]='/';
+	msg[i+6]=tm.wYear/1000+48;
+	msg[i+7]=((tm.wYear/100)%10)+48;
+	msg[i+8]=((tm.wYear/10)%10)+48;
+	msg[i+9]=(tm.wYear%10)+48;
+	msg[i+10]=' ';
+	msg[i+11]=tm.wHour/10+48;
+	msg[i+12]=(tm.wHour%10)+48;
+	msg[i+13]=':';
+	msg[i+14]=tm.wMinute/10+48;
+	msg[i+15]=(tm.wMinute%10)+48;
+	msg[i+16]=':';
+	msg[i+17]=tm.wSecond/10+48;
+	msg[i+18]=(tm.wSecond%10)+48;
+	msg[i+19]=0;
+	char url[4096]="https://api.github.com/repos/"GITHUB_USERNAME"/";
+	uint16_t url_i=0;
+	while (url[url_i]){
+		url_i++;
+	}
+	url_i+=_copy_str(url+url_i,e_dt->e.fp);
+	url[url_i]='/';
+	url_i++;
 	if (cr){
 		PRINTF_TIME("\x1b[38;2;100;100;100mCreating Project \x1b[38;2;65;118;46m'%s'\x1b[38;2;100;100;100m...\n",e_dt->e.fp);
 		char bf[4096]="{\"name\":\"";
-		uint16_t i=0;
+		i=0;
 		while (bf[i]){
 			i++;
 		}
@@ -1837,13 +2064,96 @@ void _push_github_project(string_8bit_t* fp,expand_data_t* e_dt){
 		bl=realloc(bl,bll*sizeof(github_branch_t));
 		(bl+bll-1)->nm.l=sz;
 		_copy_str((bl+bll-1)->nm.v,e_dt->e.fp);
-		(bl+bll-1)->nm.v[(bl+bll-1)->nm.l]=0;
+		(bl+bll-1)->nm.v[sz]=0;
 		(bl+bll-1)->b.l=_copy_str((bl+bll-1)->b.v,GITHUB_DEFAULT_BRANCH_NAME);
 		(bl+bll-1)->b.v[(bl+bll-1)->b.l]=0;
+		url[url_i+_copy_str(url+url_i,"contents/_")]=0;
+		i=_copy_str(bf,"{\"content\":\"\",\"message\":\"");
+		i+=_copy_str(bf+i,msg);
+		bf[i]='\"';
+		bf[i+1]='}';
+		bf[i+2]=0;
+		free(_github_api_request("PUT",url,bf));
 	}
+	PRINTF_TIME("\x1b[38;2;100;100;100mParsing Gitignore File...\n");
 	fp->v[fp->l+_copy_str(fp->v+fp->l,".gitignore")]=0;
 	gitignore_file_data_t gdt;
 	_parse_gitingore_file(fp->v,&gdt);
+	PRINTF_TIME("\x1b[38;2;100;100;100mCommiting to Branch \x1b[38;2;65;118;46m'%s/%s'\x1b[38;2;100;100;100m with Message \x1b[38;2;65;118;46m'%s'\x1b[38;2;100;100;100m...\n",e_dt->e.fp,br,msg);
+	i=url_i+_copy_str(url+url_i,"git/ref/heads/");
+	url[i+_copy_str(url+i,br)];
+	char* dt=_github_api_request("GET",url,NULL);
+	json_object_t json;
+	json_parser_state_t p=dt;
+	char bt_sha[256];
+	if (_parse_json(&p,&json)){
+		free(dt);
+		_free_gitignore_data(&gdt);
+		free(bl);
+		return;
+	}
+	free(dt);
+	bt_sha[_copy_str(bt_sha,_get_by_key(_get_by_key(&json,"object"),"sha")->dt.s.v)]=0;
+	_free_json(&json);
+	PRINTF_TIME("\x1b[38;2;100;100;100mReading Recursive Tree...\n");
+	i=url_i+_copy_str(url+url_i,"git/trees/");
+	i+=_copy_str(url+i,bt_sha);
+	url[i+_copy_str(url+i,"?recursive=true")]=0;
+	dt=_github_api_request("GET",url,NULL);
+	p=dt;
+	if (_parse_json(&p,&json)){
+		free(dt);
+		_free_gitignore_data(&gdt);
+		free(bl);
+		return;
+	}
+	free(dt);
+	github_directory_tree_t r_t={
+		0,
+		NULL
+	};
+	if (_get_by_key(&json,"truncated")->t!=JSON_OBJECT_TYPE_FALSE){
+		printf("Unimplemented!\n");
+		getchar();
+		ExitProcess(1);
+	}
+	else{
+		PRINTF_TIME("\x1b[38;2;100;100;100mFound Tree \x1b[38;2;65;118;46m'.'\x1b[38;2;100;100;100m...\n");
+		json_array_t tl=_get_by_key(&json,"tree")->dt.a;
+		for (uint32_t i=0;i<tl.l;i++){
+			json_object_t* k=tl.dt+i;
+			if (_cmp_str_len(_get_by_key(k,"type")->dt.s.v,"blob",5)){
+				r_t.sz++;
+				r_t.dt=realloc(r_t.dt,r_t.sz*sizeof(github_directory_tree_data_t));
+				github_directory_tree_data_t* e=r_t.dt+r_t.sz-1;
+				e->nm[_copy_str(e->nm,_get_by_key(k,"path")->dt.s.v)]=0;
+				e->sz=(uint32_t)_get_by_key(k,"size")->dt.i;
+				e->sha[_copy_str(e->sha,_get_by_key(k,"sha")->dt.s.v)]=0;
+			}
+			else{
+				PRINTF_TIME("\x1b[38;2;100;100;100mFound Tree \x1b[38;2;65;118;46m'./%s'\x1b[38;2;100;100;100m...\n",_get_by_key(k,"path")->dt.s.v);
+			}
+		}
+	}
+	_free_json(&json);
+	PRINTF_TIME("\x1b[38;2;100;100;100mCreating Commit...\n");
+	github_commit_data_t cm={
+		fp->l,
+		{
+			0,
+			0,
+			0,
+			0
+		},
+		0,
+		NULL,
+		msg,
+		e_dt->e.fp
+	};
+	_create_commit(fp,&r_t,&gdt,&cm);
+	if (r_t.dt){
+		free(r_t.dt);
+	}
 	_free_gitignore_data(&gdt);
 	if (cr){
 		FILE* f=fopen(GITHUB_PROJECT_BRANCH_LIST_FILE_PATH,"wb");
@@ -1858,6 +2168,7 @@ void _push_github_project(string_8bit_t* fp,expand_data_t* e_dt){
 		fclose(f);
 	}
 	free(bl);
+	getchar();ExitProcess(1);
 }
 
 
