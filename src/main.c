@@ -25,6 +25,7 @@
 #define CREATE_UPPER_KEY(x) (UPPER_KEY_MASK|((x)<<8))
 #define IS_GETCH_DOUBLE_KEY(x) (!(x)||(x)==0xe0)
 #define JSON_PARSER_NEXT_CHAR(p) (*((*(p))++))
+#define STR_LEN(x) (sizeof((x))/sizeof(char)+1)
 #define PRINTF_TIME(t,...) \
 	do{ \
 		SYSTEMTIME __st; \
@@ -39,16 +40,20 @@
 #define EDITOR_FILE_PATH "C:/Program Files/Sublime Text 3/sublime_text.exe"
 #define FLAG_ACCEPT_GITHUB 2
 #define FLAG_ACCEPT_JSON 1
+#define FLAG_ALL_INSIDE 4
 #define FLAG_ASK_CREATE 2
 #define FLAG_CHUNKED_TRANSFER 8
 #define FLAG_DATA 1
+#define FLAG_DIRECTORY 2
 #define FLAG_EDIT_TYPE 4
 #define FLAG_GITHUB_TOKEN 4
 #define FLAG_INITIALIZE 2
 #define FLAG_INVERT 1
+#define FLAG_ONE_OR_MORE 2
 #define FLAG_OPEN 1
 #define FLAG_QUOTE 2
 #define FLAG_UPDATE 1
+#define FLAG_ZERO_OR_MORE 1
 #define GETCH_DEL CREATE_UPPER_KEY('S')
 #define GIMP_FILE_PATH "C:/Program Files/GIMP 2/bin/gimp-2.10.exe"
 #define GITHUB_API_QUOTA 5000
@@ -56,6 +61,7 @@
 #define GITHUB_HEADERS "application/vnd.github.v3+json"
 #define GITHUB_PROJECT_BRANCH_LIST_FILE_PATH __FILE_BASE_DIR__"/data/github-branches.dt"
 #define GITHUB_PUSHED_PROJECT_LIST_FILE_PATH __FILE_BASE_DIR__"/data/github.dt"
+#define GITIGNORE_START_MATCH_REGEX "[^!]"
 #define HOTKEY_HANDLER_END_MESSAGE (WM_USER+1)
 #define HTTP_REQUEST_BUFFER_SIZE 4096
 #define JSON_OBJECT_TYPE_NULL 0
@@ -70,6 +76,9 @@
 #define MINECRAFT_JAVA_RUNTIME_MEMORY "512M"
 #define MINECRAFT_LAUNCHER_FILE_PATH "C:/Program Files (x86)/Minecraft Launcher/MinecraftLauncher.exe"
 #define MINECRAFT_SERVER_FOLDER __FILE_BASE_DIR__"/mc_server/"
+#define PATTERN_ELEMENT_TYPE_CHAR 0
+#define PATTERN_ELEMENT_TYPE_CHAR_CLASS 1
+#define PATTERN_ELEMENT_CHAR_CLASS_CLASS_SIZE (256/(sizeof(uint64_t)*8))
 #define PROJECT_DIR "d:/k/code"
 #define ROOT_FILE_PATH "d:/k"
 #define SHA1_DATA_INIT {0x67452301,0xefcdab89,0x98badcfe,0x10325476,0xc3d2e1f0}
@@ -187,8 +196,45 @@ typedef struct __GITHUB_BRANCH{
 
 
 
+typedef struct __PATTERN_ELEMENT_DATA_CHARA_CLASS{
+	uint64_t dt[PATTERN_ELEMENT_CHAR_CLASS_CLASS_SIZE];
+} pattern_element_data_chara_class_t;
+
+
+
+typedef union __PATTERN_ELEMENT_DATA{
+	char c;
+	pattern_element_data_chara_class_t cc;
+} pattern_element_data_t;
+
+
+
+typedef struct __PATTERN_ELEMENT{
+	uint8_t t;
+	uint8_t fl;
+	pattern_element_data_t dt;
+} pattern_element_t;
+
+
+
+typedef struct __PATTERN{
+	uint16_t sz;
+	pattern_element_t* dt;
+} pattern_t;
+
+
+
+typedef struct __GITIGNORE_FILE_DATA_PATTERN{
+	uint8_t fl;
+	uint16_t sz;
+	pattern_t* dt;
+} gitignore_file_data_pattern_t;
+
+
+
 typedef struct __GITIGNORE_FILE_DATA{
 	uint16_t sz;
+	gitignore_file_data_pattern_t* dt;
 } gitignore_file_data_t;
 
 
@@ -1532,9 +1578,90 @@ char* _github_api_request(const char* m,const char* url,const char* dt){
 
 
 
+void _parse_fnmatch_pattern(const char* dt,pattern_t* o){
+	o->sz=0;
+	o->dt=NULL;
+	while (*dt){
+		o->sz++;
+		o->dt=realloc(o->dt,o->sz*sizeof(pattern_element_t));
+		pattern_element_t* e=o->dt+o->sz-1;
+		e->fl=0;
+		if (*dt=='?'){
+			e->t=PATTERN_ELEMENT_TYPE_CHAR_CLASS;
+			e->dt.cc.dt[0]=0xffff7fffffffffff;
+			for (uint8_t i=1;i<PATTERN_ELEMENT_CHAR_CLASS_CLASS_SIZE;i++){
+				e->dt.cc.dt[i]=0xffffffffffffffff;
+			}
+		}
+		else if (*dt=='*'){
+			e->t=PATTERN_ELEMENT_TYPE_CHAR_CLASS;
+			e->fl=FLAG_ZERO_OR_MORE;
+			e->dt.cc.dt[0]=0xffff7fffffffffff;
+			for (uint8_t i=1;i<PATTERN_ELEMENT_CHAR_CLASS_CLASS_SIZE;i++){
+				e->dt.cc.dt[i]=0xffffffffffffffff;
+			}
+		}
+		else if (*dt=='['){
+			e->t=PATTERN_ELEMENT_TYPE_CHAR_CLASS;
+			for (uint8_t i=0;i<PATTERN_ELEMENT_CHAR_CLASS_CLASS_SIZE;i++){
+				e->dt.cc.dt[i]=0;
+			}
+			dt++;
+			uint8_t inv=0;
+			if (*dt=='!'){
+				inv=1;
+				dt++;
+			}
+			do{
+				char c=*dt;
+				dt++;
+				if (*dt=='-'&&*(dt+1)!=']'){
+					char d=*(dt+1);
+					dt+=2;
+					for (uint8_t i=c>>6;i<=d>>6;i++){
+						uint8_t a=(i>(c>>6)?0:c&63);
+						uint8_t b=(i<(d>>6)?63:d&63);
+						e->dt.cc.dt[i]|=((1ull<<(b-a+1))-1)<<a;
+					}
+				}
+				else{
+					e->dt.cc.dt[c>>6]|=1ull<<(c&0x3f);
+				}
+			} while (*dt!=']');
+			if (inv){
+				for (uint8_t i=0;i<PATTERN_ELEMENT_CHAR_CLASS_CLASS_SIZE;i++){
+					e->dt.cc.dt[i]^=0xffffffffffffffff;
+				}
+			}
+		}
+		else if (*dt=='\\'){
+			dt++;
+			e->t=PATTERN_ELEMENT_TYPE_CHAR;
+			e->dt.c=*dt;
+		}
+		else{
+			e->t=PATTERN_ELEMENT_TYPE_CHAR;
+			e->dt.c=*dt;
+		}
+		dt++;
+	}
+}
+
+
+
+void _free_pattern(pattern_t* p){
+	if (p->dt){
+		free(p->dt);
+	}
+}
+
+
+
 void _parse_gitingore_file(const char* fp,gitignore_file_data_t* o){
 	FILE* f=fopen(fp,"rb");
 	char c=fgetc(f);
+	o->sz=0;
+	o->dt=NULL;
 	while (c!=EOF){
 		while (c==' '||c=='\t'||c=='\r'||c=='\n'){
 			c=fgetc(f);
@@ -1558,22 +1685,50 @@ void _parse_gitingore_file(const char* fp,gitignore_file_data_t* o){
 		}
 		char bf[4096];
 		uint16_t i=0;
+		while (c=='/'){
+			c=fgetc(f);
+		}
+		if (c==EOF){
+			break;
+		}
 		while (c!=EOF&&c!='\r'&&c!='\n'){
-			bf[i]=(c=='\\'?'/':c);
+			if (i==1&&(c=='#'||c=='!')&&bf[0]=='\\'){
+				i=0;
+			}
+			bf[i]=c;
 			i++;
 			c=fgetc(f);
 		}
-		while (i&&(bf[i-1]==' '||bf[i-1]=='\t')){
+		while (i>1&&(bf[i-1]==' '||bf[i-1]=='\t')&&bf[i-2]!='\\'){
 			i--;
+		}
+		if (bf[i-1]=='/'){
+			fl|=FLAG_DIRECTORY;
+			i--;
+		}
+		while (i>2&&bf[i-1]=='*'&&bf[i-2]=='*'&&bf[i-3]=='/'){
+			i-=3;
+			fl|=FLAG_ALL_INSIDE;
+		}
+		while (i>2&&bf[0]=='*'&&bf[1]=='*'&&bf[2]=='/'){
+			i-=3;
+			for (uint16_t j=0;j<i;j++){
+				bf[j]=bf[j+3];
+			}
 		}
 		if (!i){
 			break;
 		}
 		bf[i]=0;
 		uint16_t j=i;
+		o->sz++;
+		o->dt=realloc(o->dt,o->sz*sizeof(gitignore_file_data_pattern_t));
+		gitignore_file_data_pattern_t* e=o->dt+o->sz-1;
+		e->fl=fl;
+		e->sz=1;
 		while (j){
 			j--;
-			if (j>1&&bf[j]=='/'&&bf[j-1]=='*'&&bf[j-2]=='*'){
+			if (j>1&&bf[j]=='/'&&bf[j-1]=='*'&&bf[j-2]=='*'&&(j==2||bf[j-3]!='*')){
 				for (uint16_t k=j+1;k<i;k++){
 					bf[k-3]=bf[k];
 				}
@@ -1582,18 +1737,57 @@ void _parse_gitingore_file(const char* fp,gitignore_file_data_t* o){
 				bf[i]=0;
 			}
 			if (bf[j]=='/'){
-				printf("Pattern: %s %u\n",bf+j+1,fl);
 				bf[j]=0;
-				i=j;
+				e->sz++;
+			}
+			if (bf[j]=='*'){
+				uint16_t s=j;
+				while (j&&bf[j-1]=='*'){
+					j--;
+				}
+				if (s-j){
+					uint16_t off=s-j;
+					for (uint16_t k=s+1;k<i;k++){
+						bf[k-off]=bf[k];
+					}
+					i-=off;
+					bf[i]=0;
+				}
 			}
 		}
-		printf("Pattern: %s %u\n",bf,fl);
+		e->dt=malloc(e->sz*sizeof(pattern_t));
+		pattern_t* k=e->dt;
+		j=0;
+		do{
+			_parse_fnmatch_pattern(bf+j,k);
+			j++;
+			while (bf[j-1]!=0){
+				j++;
+			}
+			k++;
+		} while (j<i);
 		if (c==EOF){
 			break;
 		}
 		c=fgetc(f);
 	}
 	fclose(f);
+}
+
+
+
+void _free_gitignore_data(gitignore_file_data_t* gdt){
+	for (uint16_t i=0;i<gdt->sz;i++){
+		for (uint16_t j=0;j<(gdt->dt+i)->sz;j++){
+			_free_pattern((gdt->dt+i)->dt+j);
+		}
+		if ((gdt->dt+i)->dt){
+			free((gdt->dt+i)->dt);
+		}
+	}
+	if (gdt->dt){
+		free(gdt->dt);
+	}
 }
 
 
@@ -1650,6 +1844,7 @@ void _push_github_project(string_8bit_t* fp,expand_data_t* e_dt){
 	fp->v[fp->l+_copy_str(fp->v+fp->l,".gitignore")]=0;
 	gitignore_file_data_t gdt;
 	_parse_gitingore_file(fp->v,&gdt);
+	_free_gitignore_data(&gdt);
 	if (cr){
 		FILE* f=fopen(GITHUB_PROJECT_BRANCH_LIST_FILE_PATH,"wb");
 		fputc(bll>>8,f);
