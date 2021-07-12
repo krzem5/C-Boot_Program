@@ -9,273 +9,16 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <conio.h>
-#include <desktop_manager.h>
 #include <fcntl.h>
 #include <io.h>
+#include <main.h>
 #include <math.h>
+#include <openssl/bio.h>
+#include <openssl/err.h>
+#include <openssl/ssl.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <openssl/bio.h>
-#include <openssl/ssl.h>
-#include <openssl/err.h>
-
-
-
-#define CREATE_UPPER_KEY(x) (UPPER_KEY_MASK|((x)<<8))
-#define IS_GETCH_DOUBLE_KEY(x) (!(x)||(x)==0xe0)
-#define JSON_PARSER_NEXT_CHAR(p) (*((*(p))++))
-#define STR_LEN(x) (sizeof((x))/sizeof(char)+1)
-#define PRINTF_TIME(t,...) \
-	do{ \
-		SYSTEMTIME __st; \
-		GetLocalTime(&__st); \
-		printf("\x1b[38;2;50;50;50m[%02u:%02u:%02u]\x1b[0m "t,__st.wHour,__st.wMinute,__st.wSecond,##__VA_ARGS__); \
-	} while (0)
-#define _WCHAR_STR(x) L##x
-#define WCHAR_STR(x) _WCHAR_STR(x)
-#define BLENDER_FILE_PATH "C:/Program Files/Blender Foundation/Blender/blender.exe"
-#define CHROME_FILE_PATH "C:/Program Files/Google/Chrome Dev/Application/chrome.exe"
-#define CUSTOM_ICON_FILE_PATH WCHAR_STR(__FILE_BASE_DIR__)L"/rsrc/icon.ico"
-#define EDITOR_FILE_PATH "C:/Program Files/Sublime Text 3/sublime_text.exe"
-#define FLAG_ACCEPT_GITHUB 2
-#define FLAG_ACCEPT_JSON 1
-#define FLAG_ALL_INSIDE 4
-#define FLAG_ASK_CREATE 2
-#define FLAG_CHUNKED_TRANSFER 8
-#define FLAG_DATA 1
-#define FLAG_DIRECTORY 2
-#define FLAG_EDIT_TYPE 4
-#define FLAG_FROM_ROOT 8
-#define FLAG_GITHUB_TOKEN 4
-#define FLAG_INITIALIZE 2
-#define FLAG_INVERT 1
-#define FLAG_ONE_OR_MORE 2
-#define FLAG_OPEN 1
-#define FLAG_QUOTE 2
-#define FLAG_UPDATE 1
-#define FLAG_ZERO_OR_MORE 1
-#define GETCH_DEL CREATE_UPPER_KEY('S')
-#define GIMP_FILE_PATH "C:/Program Files/GIMP 2/bin/gimp-2.10.exe"
-#define GITHUB_API_QUOTA 5000
-#define GITHUB_DEFAULT_BRANCH_NAME "main"
-#define GITHUB_HEADERS "application/vnd.github.v3+json"
-#define GITHUB_PROJECT_BRANCH_LIST_FILE_PATH __FILE_BASE_DIR__"/data/github-branches.dt"
-#define GITHUB_COMMIT_DATA_UPDATE_COUNT 0
-#define GITHUB_COMMIT_DATA_SKIP_COUNT 1
-#define GITHUB_COMMIT_DATA_IGNORE_COUNT 2
-#define GITHUB_COMMIT_DATA_DELETE_COUNT 3
-#define GITHUB_PUSHED_PROJECT_LIST_FILE_PATH __FILE_BASE_DIR__"/data/github.dt"
-#define GITHUB_USERNAME "krzem5"
-#define GITIGNORE_PATTERN_ELEMENT_CHAR_CLASS_CLASS_SIZE (256/(sizeof(uint64_t)*8))
-#define GITIGNORE_PATTERN_ELEMENT_TYPE_ANY 0
-#define GITIGNORE_PATTERN_ELEMENT_TYPE_ANY_STAR 1
-#define GITIGNORE_PATTERN_ELEMENT_TYPE_CHAR 2
-#define GITIGNORE_PATTERN_ELEMENT_TYPE_CHAR_CLASS 3
-#define GITIGNORE_START_MATCH_REGEX "[^!]"
-#define HOTKEY_HANDLER_END_MESSAGE (WM_USER+1)
-#define HTTP_REQUEST_BUFFER_SIZE 4096
-#define JSON_OBJECT_TYPE_ARRAY 0
-#define JSON_OBJECT_TYPE_FALSE 1
-#define JSON_OBJECT_TYPE_FLOAT 2
-#define JSON_OBJECT_TYPE_INTEGER 3
-#define JSON_OBJECT_TYPE_MAP 4
-#define JSON_OBJECT_TYPE_NULL 5
-#define JSON_OBJECT_TYPE_STRING 6
-#define JSON_OBJECT_TYPE_TRUE 7
-#define MINECRAFT_JAVA_RUNTIME_FILE_PATH "C:/Program Files/Java/jdk-16.0.1/bin/java.exe"
-#define MINECRAFT_JAVA_RUNTIME_MEMORY "512M"
-#define MINECRAFT_LAUNCHER_FILE_PATH "C:/Program Files (x86)/Minecraft Launcher/MinecraftLauncher.exe"
-#define MINECRAFT_SERVER_FOLDER __FILE_BASE_DIR__"/mc_server/"
-#define PROJECT_DIR "d:/k/code"
-#define ROOT_FILE_PATH "d:/k"
-#define SHA1_DATA_INIT {0x67452301,0xefcdab89,0x98badcfe,0x10325476,0xc3d2e1f0}
-#define TEMPLATES_FILE_PATH __FILE_BASE_DIR__"/templates"
-#define UPPER_KEY_MASK 255
-#define USER_AGENT_STRING "Request API"
-
-
-
-struct __JSON_OBJECT;
-struct __JSON_MAP_KEYPAIR;
-
-
-
-typedef uint16_t wchar_t;
-
-
-
-typedef char* json_parser_state_t;
-
-
-
-typedef struct __STRING_8BIT{
-	uint8_t l;
-	char v[256];
-} string_8bit_t;
-
-
-
-typedef struct __STRING_32BIT{
-	uint32_t l;
-	char* v;
-} string_32bit_t;
-
-
-
-typedef struct __PROJECT_TYPE{
-	uint8_t l;
-	char v[256];
-	uint16_t el;
-	string_8bit_t* e;
-} project_type_t;
-
-
-
-typedef union __EXPAND_DATA_EXTRA{
-	char y[256];
-	char fp[256];
-} expand_data_extra_t;
-
-
-
-typedef struct __EXPAND_DATA{
-	char nm[256];
-	char pt[256];
-	char t[256];
-	char u_nm[256];
-	expand_data_extra_t e;
-} expand_data_t;
-
-
-
-typedef struct __JSON_ARRAY{
-	uint32_t l;
-	struct __JSON_OBJECT* dt;
-} json_array_t;
-
-
-
-typedef struct __JSON_MAP{
-	uint32_t l;
-	struct __JSON_MAP_KEYPAIR* dt;
-} json_map_t;
-
-
-
-typedef union __JSON_OBJECT_DATA{
-	int64_t i;
-	double f;
-	string_32bit_t s;
-	json_array_t a;
-	json_map_t m;
-} json_object_data_t;
-
-
-
-typedef struct __JSON_OBJECT{
-	uint8_t t;
-	json_object_data_t dt;
-} json_object_t;
-
-
-
-typedef struct __JSON_MAP_KEYPAIR{
-	string_32bit_t k;
-	json_object_t v;
-} json_map_keypair_t;
-
-
-
-typedef struct __SHA1_DATA{
-	uint32_t a;
-	uint32_t b;
-	uint32_t c;
-	uint32_t d;
-	uint32_t e;
-} sha1_data_t;
-
-
-
-typedef struct __GITHUB_BRANCH{
-	string_8bit_t nm;
-	string_8bit_t b;
-} github_branch_t;
-
-
-
-typedef struct __PATTERN_ELEMENT_DATA_CHARA_CLASS{
-	uint64_t dt[GITIGNORE_PATTERN_ELEMENT_CHAR_CLASS_CLASS_SIZE];
-} gitignore_pattern_element_data_chara_class_t;
-
-
-
-typedef union __PATTERN_ELEMENT_DATA{
-	char c;
-	gitignore_pattern_element_data_chara_class_t cc;
-} gitignore_pattern_element_data_t;
-
-
-
-typedef struct __PATTERN_ELEMENT{
-	uint8_t t;
-	gitignore_pattern_element_data_t dt;
-} gitignore_pattern_element_t;
-
-
-
-typedef struct __PATTERN{
-	uint16_t sz;
-	gitignore_pattern_element_t* dt;
-} gitignore_pattern_t;
-
-
-
-typedef struct __GITIGNORE_FILE_DATA_PATTERN{
-	uint8_t fl;
-	uint16_t sz;
-	gitignore_pattern_t* dt;
-} gitignore_file_data_pattern_t;
-
-
-
-typedef struct __GITIGNORE_FILE_DATA{
-	uint16_t sz;
-	gitignore_file_data_pattern_t* dt;
-} gitignore_file_data_t;
-
-
-
-typedef struct __GITHUB_DIRECTORY_TREE_DATA{
-	char nm[256];
-	uint32_t sz;
-	char sha[41];
-} github_directory_tree_data_t;
-
-
-
-typedef struct __GITHUB_DIRECTORY_TREE{
-	uint32_t sz;
-	github_directory_tree_data_t* dt;
-} github_directory_tree_t;
-
-
-
-typedef struct __GITHUB_COMMIT_DATA_FILE{
-	char fp[256];
-	char* dt;
-} github_commit_data_file_t;
-
-
-
-typedef struct __GITHUB_COMMIT_DATA{
-	uint8_t fp_s;
-	uint32_t cnt[4];
-	uint32_t sz;
-	github_commit_data_file_t* dt;
-	const char* msg;
-	const char* nm;
-} github_commit_data_t;
 
 
 
@@ -395,21 +138,6 @@ uint8_t _str_title_case(char* d,const char* s,uint8_t l){
 			st=0;
 		}
 	}
-	return o;
-}
-
-
-
-wchar_t* _expand_to_wide(const char* s){
-	uint32_t sz=0;
-	while (*(s+sz)){
-		sz++;
-	}
-	wchar_t* o=malloc((sz+1)*sizeof(wchar_t));
-	for (uint32_t i=0;i<sz;i++){
-		*(o+i)=*(s+i);
-	}
-	*(o+sz)=0;
 	return o;
 }
 
@@ -1870,7 +1598,105 @@ uint8_t _match_gitignore_pattern(const gitignore_pattern_element_t* p,uint32_t s
 
 
 
-void _create_commit(string_8bit_t* fp,const github_directory_tree_t* r_t,const gitignore_file_data_t* gdt,github_commit_data_t* o){
+uint8_t _is_binary(uint8_t* bf,uint32_t l){
+	if (!l){
+		return 0;
+	}
+	if (l>4096){
+		l=4096;
+	}
+	float r1=0;
+	float r2=0;
+	uint8_t e=0;
+	for (uint16_t i=0;i<l;i++){
+		if (bf[i]>127){
+			r2++;
+		}
+		else if (bf[i]>31||bf[i]=='\n'||bf[i]=='\r'||bf[i]=='\t'){
+			r1++;
+		}
+		if (!bf[i]){
+			e|=1;
+		}
+		else if (bf[i]==255){
+			e|=3;
+		}
+	}
+	r1/=l;
+	r2/=l;
+	if (r1>=0.9f&&r2>=0.9f){
+		return 1;
+	}
+	uint8_t enc_u=1;
+	for (uint16_t i=0;i<l;i++){
+		if (bf[i]<128){
+			continue;
+		}
+		else if ((bf[i]>>5)==0b110){
+			i++;
+			if (i==l){
+				break;
+			}
+			if ((bf[i]>>6)!=0b10){
+				enc_u=0;
+				break;
+			}
+		}
+		else if ((bf[i]>>4)==0b1110){
+			i++;
+			if (i==l){
+				break;
+			}
+			if ((bf[i]>>6)!=0b10){
+				enc_u=0;
+				break;
+			}
+			i++;
+			if (i==l){
+				break;
+			}
+			if ((bf[i]>>6)!=0b10){
+				enc_u=0;
+				break;
+			}
+		}
+		else if ((bf[i]>>3)==0b11110){
+			i++;
+			if (i==l){
+				break;
+			}
+			if ((bf[i]>>6)!=0b10){
+				enc_u=0;
+				break;
+			}
+			i++;
+			if (i==l){
+				break;
+			}
+			if ((bf[i]>>6)!=0b10){
+				enc_u=0;
+				break;
+			}
+			i++;
+			if (i==l){
+				break;
+			}
+			if ((bf[i]>>6)!=0b10){
+				enc_u=0;
+				break;
+			}
+		}
+		else{
+			enc_u=0;
+			break;
+		}
+	}
+	return (((r1>=0.3f&&r2<=0.05f)||(r1>=0.8f&&r1>=0.8f))?!enc_u:(!enc_u&&e==3));
+}
+
+
+
+void _create_commit(string_8bit_t* fp,github_directory_tree_t* r_t,const gitignore_file_data_t* gdt,github_commit_data_t* o){
 	fp->v[fp->l]='*';
 	fp->v[fp->l+1]=0;
 	WIN32_FIND_DATAA dt;
@@ -1881,10 +1707,10 @@ void _create_commit(string_8bit_t* fp,const github_directory_tree_t* r_t,const g
 				continue;
 			}
 			char tmp[256];
-			uint8_t sz=fp->l+_copy_str(fp->v+fp->l,dt.cFileName);
-			fp->v[sz]=0;
+			uint8_t fp_l=fp->l+_copy_str(fp->v+fp->l,dt.cFileName);
+			fp->v[fp_l]=0;
 			uint8_t l=1;
-			for (uint8_t i=o->fp_s;i<sz;i++){
+			for (uint8_t i=o->fp_s;i<fp_l;i++){
 				if (fp->v[i]=='/'){
 					tmp[i-o->fp_s]=0;
 					l++;
@@ -1893,7 +1719,7 @@ void _create_commit(string_8bit_t* fp,const github_directory_tree_t* r_t,const g
 					tmp[i-o->fp_s]=(fp->v[i]>96&&fp->v[i]<123?fp->v[i]-32:fp->v[i]);
 				}
 			}
-			tmp[sz-o->fp_s]=0;
+			tmp[fp_l-o->fp_s]=0;
 			uint8_t ig=0;
 			for (uint16_t i=0;i<gdt->sz;i++){
 				gitignore_file_data_pattern_t* f_dt_p=gdt->dt+i;
@@ -1953,7 +1779,110 @@ _check_next_pattern:;
 				continue;
 			}
 _check_file_hash:
-			printf("\x1b[0mCheck: %s\n",fp->v+o->fp_s);
+			HANDLE sz_fh=CreateFileA(fp->v,GENERIC_READ,0,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
+			uint32_t sz=GetFileSize(sz_fh,NULL);
+			CloseHandle(sz_fh);
+			uint8_t* dt=malloc(sz*sizeof(uint8_t));
+			FILE* f=fopen(fp->v,"rb");
+			fread(dt,sizeof(uint8_t),sz,f);
+			fclose(f);
+			uint8_t bn=_is_binary(dt,sz);
+			if (!bn){
+				uint32_t i=0;
+				uint32_t k=0;
+				for (uint32_t j=0;j<sz;j++){
+					if (i){
+						*(dt+j-i)=*(dt+j);
+					}
+					if (*(dt+j)=='\r'){
+						i++;
+						k++;
+					}
+				}
+				sz-=k;
+			}
+			for (uint32_t i=0;i<r_t->sz;i++){
+				github_directory_tree_data_t* e=r_t->dt+i;
+				if (e->rm&&_cmp_str_len(e->nm,fp->v+o->fp_s,fp->l-o->fp_s+1)){
+					e->rm=0;
+					uint8_t bf[64]="blob ";
+					uint8_t bfl=0;
+					while (bf[bfl]){
+						bfl++;
+					}
+					char tmp[20];
+					uint8_t tmpi=0;
+					uint64_t v=sz;
+					do{
+						tmp[tmpi]=v%10;
+						tmpi++;
+						v/=10;
+					} while (v);
+					while (tmpi){
+						tmpi--;
+						bf[bfl]=tmp[tmpi]+48;
+						bfl++;
+					}
+					bf[bfl]=0;
+					bfl++;
+					uint64_t sha_sz=bfl;
+					uint32_t k=(sz>(uint32_t)(64-bfl)?64-bfl:sz);
+					uint32_t off=bfl;
+					memcpy(bf+bfl,dt+sha_sz-off,k);
+					sha_sz+=k;
+					sha1_data_t h=SHA1_DATA_INIT;
+					if (sz>=(uint32_t)(64-bfl)){
+						uint32_t j=sz-k;
+						_sha1_chunk(&h,bf);
+						bfl=0;
+						while (j){
+							k=(j>64?64:j);
+							memcpy(bf,dt+sha_sz-off,k);
+							sha_sz+=k;
+							if (k!=64){
+								bfl=k;
+								break;
+							}
+							_sha1_chunk(&h,bf);
+							j-=64;
+							if (!j){
+								bfl=0;
+								break;
+							}
+						}
+					}
+					bf[bfl]=0x80;
+					bfl++;
+					if (bfl>=56){
+						while (bfl<64){
+							bf[bfl]=0;
+							bfl++;
+						}
+						_sha1_chunk(&h,bf);
+						bfl=0;
+					}
+					while (bfl<56){
+						bf[bfl]=0;
+						bfl++;
+					}
+					sha_sz<<=3;
+					for (uint8_t k=63;k>=56;k--){
+						bf[k]=sha_sz&0xff;
+						sha_sz>>=8;
+					}
+					_sha1_chunk(&h,bf);
+					if (_cmp_hash(&h,e->sha)){
+						o->cnt[GITHUB_COMMIT_DATA_SKIP_COUNT]++;
+						PRINTF_TIME("\x1b[38;2;230;210;40m? %s/%s\n",o->nm,fp->v+o->fp_s);
+						goto _skip_file;
+					}
+					break;
+				}
+			}
+			o->cnt[GITHUB_COMMIT_DATA_UPDATE_COUNT]++;
+			PRINTF_TIME("\x1b[38;2;70;210;70m+ %s/%s\n",o->nm,fp->v+o->fp_s);
+_skip_file:
+			free(dt);
 		} while (FindNextFileA(fh,&dt));
 		FindClose(fh);
 	}
@@ -2120,8 +2049,8 @@ void _push_github_project(string_8bit_t* fp,const expand_data_t* e_dt){
 	else{
 		PRINTF_TIME("\x1b[38;2;100;100;100mFound Tree \x1b[38;2;65;118;46m'.'\x1b[38;2;100;100;100m...\n");
 		json_array_t tl=_get_by_key(&json,"tree")->dt.a;
-		for (uint32_t i=0;i<tl.l;i++){
-			json_object_t* k=tl.dt+i;
+		for (uint32_t j=0;j<tl.l;j++){
+			json_object_t* k=tl.dt+j;
 			if (_cmp_str_len(_get_by_key(k,"type")->dt.s.v,"blob",5)){
 				r_t.sz++;
 				r_t.dt=realloc(r_t.dt,r_t.sz*sizeof(github_directory_tree_data_t));
@@ -2129,6 +2058,7 @@ void _push_github_project(string_8bit_t* fp,const expand_data_t* e_dt){
 				e->nm[_copy_str(e->nm,_get_by_key(k,"path")->dt.s.v)]=0;
 				e->sz=(uint32_t)_get_by_key(k,"size")->dt.i;
 				e->sha[_copy_str(e->sha,_get_by_key(k,"sha")->dt.s.v)]=0;
+				e->rm=1;
 			}
 			else{
 				PRINTF_TIME("\x1b[38;2;100;100;100mFound Tree \x1b[38;2;65;118;46m'./%s'\x1b[38;2;100;100;100m...\n",_get_by_key(k,"path")->dt.s.v);
@@ -2151,6 +2081,13 @@ void _push_github_project(string_8bit_t* fp,const expand_data_t* e_dt){
 		e_dt->e.fp
 	};
 	_create_commit(fp,&r_t,&gdt,&cm);
+	for (uint32_t j=0;j<r_t.sz;j++){
+		if ((r_t.dt+j)->rm){
+			cm.cnt[GITHUB_COMMIT_DATA_DELETE_COUNT]++;
+			PRINTF_TIME("\x1b[38;2;210;40;40m- %s/%s\n",e_dt->e.fp,(r_t.dt+j)->nm);
+		}
+	}
+	PRINTF_TIME("\x1b[38;2;40;210;190m%s => \x1b[38;2;70;210;70m+%u\x1b[38;2;40;210;190m, \x1b[38;2;230;210;40m?%u\x1b[38;2;40;210;190m, \x1b[38;2;190;0;220m!%u\x1b[38;2;40;210;190m, \x1b[38;2;210;40;40m-%u\n",e_dt->e.fp,cm.cnt[GITHUB_COMMIT_DATA_UPDATE_COUNT],cm.cnt[GITHUB_COMMIT_DATA_SKIP_COUNT],cm.cnt[GITHUB_COMMIT_DATA_IGNORE_COUNT],cm.cnt[GITHUB_COMMIT_DATA_DELETE_COUNT]);
 	if (r_t.dt){
 		free(r_t.dt);
 	}
@@ -2979,7 +2916,40 @@ _push_next_project:;
 						getchar();
 						return 0;
 					}
-					printf("Push: %s\n",argv[2]);
+					string_8bit_t fp={
+						0
+					};
+					while (argv[2][fp.l]){
+						fp.v[fp.l]=(argv[2][fp.l]=='\\'?'/':argv[2][fp.l]);
+						fp.l++;
+					}
+					while (fp.v[fp.l-1]=='/'){
+						fp.l--;
+					}
+					fp.v[fp.l]=0;
+					uint8_t i=fp.l;
+					while (fp.v[i-1]!='/'){
+						i--;
+					}
+					if (_cmp_str_len_lower(fp.v,PROJECT_DIR,STR_LEN(PROJECT_DIR))){
+						char t[256];
+						uint8_t j=0;
+						while (fp.v[i+j]!='-'){
+							if (!(fp.v[i+j])){
+								return 1;
+							}
+							t[j]=fp.v[i+j];
+							j++;
+						}
+						t[j]=0;
+						expand_data_t e_dt;
+						_generate_expand_data(&e_dt,t,fp.v+i+j+1);
+						e_dt.e.fp[_copy_str(e_dt.e.fp,fp.v+i)]=0;
+						fp.v[fp.l]='/';
+						fp.l++;
+						fp.v[fp.l]=0;
+						_push_github_project(&fp,&e_dt);
+					}
 				}
 				getchar();
 				return 0;

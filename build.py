@@ -6,7 +6,7 @@ import os
 
 __file__=os.path.abspath(__file__).replace("\\","/")
 DEFINES={"__FILE_BASE_DIR__":"\""+__file__[:-len(__file__.split("/")[-1])-1].rstrip("/")+"\""}
-DEFAULT_ARGS=["4","*"]
+DEFAULT_ARGS=["4","D:/k/code/C-Boot_Program"]
 
 
 
