@@ -51,6 +51,7 @@ extern "C" {
 #define GITHUB_COMMIT_DATA_SKIP_COUNT 1
 #define GITHUB_COMMIT_DATA_UPDATE_COUNT 0
 #define GITHUB_DEFAULT_BRANCH_NAME "main"
+#define GITHUB_EMPTY_FILE_HASH "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
 #define GITHUB_HEADERS "application/vnd.github.v3+json"
 #define GITHUB_MAX_FILE_SIZE 52428800
 #define GITHUB_PROJECT_BRANCH_LIST_FILE_PATH __FILE_BASE_DIR__"/data/github-branches.dt"

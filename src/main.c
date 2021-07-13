@@ -2256,9 +2256,22 @@ void _push_github_project(string_8bit_t* fp,const expand_data_t* e_dt){
 		PRINTF_TIME("\x1b[38;2;100;100;100mChanges Uploaded...\n");
 	}
 	else{
+		PRINTF_TIME("\x1b[38;2;100;100;100mNo Changes to Upload\n");
 		free(cm.cm);
 	}
 	if (cr){
+		PRINTF_TIME("\x1b[38;2;100;100;100mDeleting Temporary File...\n");
+		url[url_i+_copy_str(url+url_i,"contents/_")]=0;
+		char bf[4096]="{\"sha\":\""GITHUB_EMPTY_FILE_HASH"\",\"message\":\"";
+		i=0;
+		while (bf[i]){
+			i++;
+		}
+		i+=_copy_str(bf+i,msg);
+		bf[i]='\"';
+		bf[i+1]='}';
+		bf[i+2]=0;
+		free(_github_api_request("DELETE",url,bf));
 		FILE* f=fopen(GITHUB_PROJECT_BRANCH_LIST_FILE_PATH,"wb");
 		fputc(bll>>8,f);
 		fputc(bll&0xff,f);
@@ -2271,7 +2284,7 @@ void _push_github_project(string_8bit_t* fp,const expand_data_t* e_dt){
 		fclose(f);
 	}
 	free(bl);
-	getchar();ExitProcess(1);
+	getchar();
 }
 
 
@@ -3117,6 +3130,7 @@ _push_next_project:;
 						_push_github_project(&fp,&e_dt);
 					}
 				}
+				printf("\x1b[38;2;50;50;50m<ENTER>\x1b[0m\n");
 				getchar();
 				return 0;
 			}

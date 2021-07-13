@@ -1,4 +1,6 @@
-build
 __processing_core
+build
 data
 mc_server
+src/incude/crypto
+src/incude/openssl
