@@ -2220,8 +2220,39 @@ void _push_github_project(string_8bit_t* fp,const expand_data_t* e_dt){
 			return;
 		}
 		free(dt);
-		printf("%s\n",_get_by_key(&json,"sha")->dt.s.v);
+		url[url_i+_copy_str(url+url_i,"git/commits")]=0;
+		char bf[4096]="{\"message\":\"";
+		i=0;
+		while (bf[i]){
+			i++;
+		}
+		i+=_copy_str(bf+i,msg);
+		i+=_copy_str(bf+i,"\",\"tree\":\"");
+		i+=_copy_str(bf+i,_get_by_key(&json,"sha")->dt.s.v);
+		i+=_copy_str(bf+i,"\",\"parents\":[\"");
+		i+=_copy_str(bf+i,bt_sha);
+		bf[i]='\"';
+		bf[i+1]=']';
+		bf[i+2]='}';
+		bf[i+3]=0;
 		_free_json(&json);
+		dt=_github_api_request("POST",url,bf);
+		p=dt;
+		if (_parse_json(&p,&json)){
+			free(dt);
+			free(bl);
+			return;
+		}
+		free(dt);
+		i=url_i+_copy_str(url+url_i,"git/refs/heads/");
+		url[i+_copy_str(url+i,br)]=0;
+		i=_copy_str(bf,"{\"force\":true,\"sha\":\"");
+		i+=_copy_str(bf+i,_get_by_key(&json,"sha")->dt.s.v);
+		bf[i]='\"';
+		bf[i+1]='}';
+		bf[i+2]=0;
+		_free_json(&json);
+		free(_github_api_request("PATCH",url,bf));
 		PRINTF_TIME("\x1b[38;2;100;100;100mChanges Uploaded...\n");
 	}
 	else{
