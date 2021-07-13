@@ -13,8 +13,6 @@
 #include <io.h>
 #include <main.h>
 #include <math.h>
-#include <openssl/bio.h>
-#include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -30,23 +28,31 @@ char _gh_token[256]={0};
 
 
 
+uint8_t _str_len(const char* s){
+	uint8_t o=0;
+	while (*(s+o)){
+		o++;
+	}
+	return o;
+}
+
+
+
 uint8_t _cmp_str_len(const char* a,const char* b,uint8_t l){
-	do{
-		l--;
-		if (*(a+l)!=*(b+l)){
+	for (uint8_t i=0;i<l;i++){
+		if (*(a+i)!=*(b+i)){
 			return 0;
 		}
-	} while (l);
+	}
 	return 1;
 }
 
 
 
 uint8_t _cmp_str_len_lower(const char* a,const char* b,uint8_t l){
-	do{
-		l--;
-		char c=*(a+l);
-		char d=*(b+l);
+	for (uint8_t i=0;i<l;i++){
+		char c=*(a+i);
+		char d=*(b+i);
 		if (c>96&&c<123){
 			c-=32;
 		}
@@ -56,7 +62,7 @@ uint8_t _cmp_str_len_lower(const char* a,const char* b,uint8_t l){
 		if (c!=d){
 			return 0;
 		}
-	} while (l);
+	}
 	return 1;
 }
 
@@ -1794,7 +1800,7 @@ _check_file_hash:
 					if (i){
 						*(dt+j-i)=*(dt+j);
 					}
-					if (*(dt+j)=='\r'){
+					if (j+1<sz&&*(dt+j)=='\r'&&*(dt+j+1)=='\n'){
 						i++;
 						k++;
 					}
@@ -1803,84 +1809,172 @@ _check_file_hash:
 			}
 			for (uint32_t i=0;i<r_t->sz;i++){
 				github_directory_tree_data_t* e=r_t->dt+i;
-				if (e->rm&&_cmp_str_len(e->nm,fp->v+o->fp_s,fp->l-o->fp_s+1)){
+				if (e->rm&&_cmp_str_len(e->nm,fp->v+o->fp_s,fp_l-o->fp_s+1)){
 					e->rm=0;
-					uint8_t bf[64]="blob ";
-					uint8_t bfl=0;
-					while (bf[bfl]){
+					if (sz==e->sz){
+						uint8_t bf[64]="blob ";
+						uint8_t bfl=0;
+						while (bf[bfl]){
+							bfl++;
+						}
+						char tmp[20];
+						uint8_t tmpi=0;
+						uint64_t v=sz;
+						do{
+							tmp[tmpi]=v%10;
+							tmpi++;
+							v/=10;
+						} while (v);
+						while (tmpi){
+							tmpi--;
+							bf[bfl]=tmp[tmpi]+48;
+							bfl++;
+						}
+						bf[bfl]=0;
 						bfl++;
-					}
-					char tmp[20];
-					uint8_t tmpi=0;
-					uint64_t v=sz;
-					do{
-						tmp[tmpi]=v%10;
-						tmpi++;
-						v/=10;
-					} while (v);
-					while (tmpi){
-						tmpi--;
-						bf[bfl]=tmp[tmpi]+48;
-						bfl++;
-					}
-					bf[bfl]=0;
-					bfl++;
-					uint64_t sha_sz=bfl;
-					uint32_t k=(sz>(uint32_t)(64-bfl)?64-bfl:sz);
-					uint32_t off=bfl;
-					memcpy(bf+bfl,dt+sha_sz-off,k);
-					sha_sz+=k;
-					sha1_data_t h=SHA1_DATA_INIT;
-					if (sz>=(uint32_t)(64-bfl)){
-						uint32_t j=sz-k;
-						_sha1_chunk(&h,bf);
-						bfl=0;
-						while (j){
-							k=(j>64?64:j);
-							memcpy(bf,dt+sha_sz-off,k);
-							sha_sz+=k;
-							if (k!=64){
-								bfl=k;
-								break;
-							}
+						uint32_t k=(sz>(uint32_t)(64-bfl)?64-bfl:sz);
+						uint32_t off=bfl;
+						memcpy(bf+bfl,dt,k);
+						uint64_t sha_sz=bfl+k;
+						sha1_data_t h=SHA1_DATA_INIT;
+						if (sz>=(uint32_t)(64-bfl)){
+							uint32_t j=sz-k;
 							_sha1_chunk(&h,bf);
-							j-=64;
-							if (!j){
-								bfl=0;
-								break;
+							bfl=0;
+							while (j){
+								k=(j>64?64:j);
+								memcpy(bf,dt+sha_sz-off,k);
+								sha_sz+=k;
+								if (k!=64){
+									bfl=k;
+									break;
+								}
+								_sha1_chunk(&h,bf);
+								j-=64;
+								if (!j){
+									bfl=0;
+									break;
+								}
 							}
 						}
-					}
-					bf[bfl]=0x80;
-					bfl++;
-					if (bfl>=56){
-						while (bfl<64){
+						else{
+							bfl+=k;
+						}
+						bf[bfl]=0x80;
+						bfl++;
+						if (bfl>=56){
+							while (bfl<64){
+								bf[bfl]=0;
+								bfl++;
+							}
+							_sha1_chunk(&h,bf);
+							bfl=0;
+						}
+						while (bfl<56){
 							bf[bfl]=0;
 							bfl++;
 						}
+						sha_sz<<=3;
+						for (uint8_t k=63;k>55;k--){
+							bf[k]=sha_sz&0xff;
+							sha_sz>>=8;
+						}
 						_sha1_chunk(&h,bf);
-						bfl=0;
-					}
-					while (bfl<56){
-						bf[bfl]=0;
-						bfl++;
-					}
-					sha_sz<<=3;
-					for (uint8_t k=63;k>=56;k--){
-						bf[k]=sha_sz&0xff;
-						sha_sz>>=8;
-					}
-					_sha1_chunk(&h,bf);
-					if (_cmp_hash(&h,e->sha)){
-						o->cnt[GITHUB_COMMIT_DATA_SKIP_COUNT]++;
-						PRINTF_TIME("\x1b[38;2;230;210;40m? %s/%s\n",o->nm,fp->v+o->fp_s);
-						goto _skip_file;
+						if (_cmp_hash(&h,e->sha)){
+							o->cnt[GITHUB_COMMIT_DATA_SKIP_COUNT]++;
+							PRINTF_TIME("\x1b[38;2;230;210;40m? %s/%s\n",o->nm,fp->v+o->fp_s);
+							goto _skip_file;
+						}
 					}
 					break;
 				}
 			}
 			o->cnt[GITHUB_COMMIT_DATA_UPDATE_COUNT]++;
 			PRINTF_TIME("\x1b[38;2;70;210;70m+ %s/%s\n",o->nm,fp->v+o->fp_s);
+			if (*(o->cm+o->cml-1)!='['){
+				o->cml++;
+				o->cm=realloc(o->cm,o->cml*sizeof(char));
+				*(o->cm+o->cml-1)=',';
+			}
+			uint32_t k=o->cml;
+			if ((bn?(sz<<2)/3:sz)>GITHUB_MAX_FILE_SIZE){
+				o->cml+=fp_l-o->fp_s+66;
+				o->cm=realloc(o->cm,o->cml*sizeof(char));
+				k+=_copy_str(o->cm+k,"{\"mode\":\"100644\",\"type\":\"blob\",\"content\":\"File too Big\",\"path\":\"");
+				k+=_copy_str(o->cm+k,fp->v+o->fp_s);
+				*(o->cm+k)='\"';
+				*(o->cm+k+1)='}';
+			}
+			else if (bn){
+				//
+			}
+			else{
+				o->cml+=fp_l-o->fp_s+sz+54;
+				for (uint32_t l=0;l<sz;l++){
+					uint8_t c=*(dt+l);
+					if (c=='\\'||c=='\"'||c=='\b'||c=='\f'||c=='\n'||c=='\r'||c=='\t'||c=='\v'){
+						o->cml++;
+					}
+					else if (c<32||c>126){
+						o->cml+=3;
+					}
+				}
+				o->cm=realloc(o->cm,o->cml*sizeof(char));
+				k+=_copy_str(o->cm+k,"{\"mode\":\"100644\",\"type\":\"blob\",\"content\":\"");
+				for (uint32_t l=0;l<sz;l++){
+					uint8_t c=*(dt+l);
+					if (c=='\\'||c=='\"'){
+						*(o->cm+k)='\\';
+						*(o->cm+k+1)=c;
+						k++;
+					}
+					else if (c>31&&c<127){
+						*(o->cm+k)=c;
+					}
+					else if (c=='\b'){
+						*(o->cm+k)='\\';
+						*(o->cm+k+1)='b';
+						k++;
+					}
+					else if (c=='\f'){
+						*(o->cm+k)='\\';
+						*(o->cm+k+1)='f';
+						k++;
+					}
+					else if (c=='\n'){
+						*(o->cm+k)='\\';
+						*(o->cm+k+1)='n';
+						k++;
+					}
+					else if (c=='\r'){
+						*(o->cm+k)='\\';
+						*(o->cm+k+1)='r';
+						k++;
+					}
+					else if (c=='\t'){
+						*(o->cm+k)='\\';
+						*(o->cm+k+1)='t';
+						k++;
+					}
+					else if (c=='\v'){
+						*(o->cm+k)='\\';
+						*(o->cm+k+1)='v';
+						k++;
+					}
+					else{
+						*(o->cm+k)='\\';
+						*(o->cm+k+1)='x';
+						*(o->cm+k+2)=(c>>4)+((c>>4)>9?87:48);
+						*(o->cm+k+3)=(c&0xf)+((c&0xf)>9?87:48);
+						k+=3;
+					}
+					k++;
+				}
+				k+=_copy_str(o->cm+k,"\",\"path\":\"");
+				k+=_copy_str(o->cm+k,fp->v+o->fp_s);
+				*(o->cm+k)='\"';
+				*(o->cm+k+1)='}';
+			}
 _skip_file:
 			free(dt);
 		} while (FindNextFileA(fh,&dt));
@@ -2078,20 +2172,61 @@ void _push_github_project(string_8bit_t* fp,const expand_data_t* e_dt){
 		0,
 		NULL,
 		msg,
-		e_dt->e.fp
+		e_dt->e.fp,
+		malloc(64),
+		0
 	};
+	cm.cml=_copy_str(cm.cm,"{\"base_tree\":\"");
+	cm.cml+=_copy_str(cm.cm+cm.cml,bt_sha);
+	cm.cml+=_copy_str(cm.cm+cm.cml,"\",\"tree\":[");
 	_create_commit(fp,&r_t,&gdt,&cm);
 	for (uint32_t j=0;j<r_t.sz;j++){
 		if ((r_t.dt+j)->rm){
 			cm.cnt[GITHUB_COMMIT_DATA_DELETE_COUNT]++;
 			PRINTF_TIME("\x1b[38;2;210;40;40m- %s/%s\n",e_dt->e.fp,(r_t.dt+j)->nm);
+			if (*(cm.cm+cm.cml-1)!='['){
+				cm.cml++;
+				cm.cm=realloc(cm.cm,cm.cml*sizeof(char));
+				*(cm.cm+cm.cml-1)=',';
+			}
+			uint32_t k=cm.cml;
+			cm.cml+=_str_len((r_t.dt+j)->nm)+52;
+			cm.cm=realloc(cm.cm,cm.cml*sizeof(char));
+			k+=_copy_str(cm.cm+k,"{\"mode\":\"100644\",\"type\":\"blob\",\"sha\":null,\"path\":\"");
+			k+=_copy_str(cm.cm+k,(r_t.dt+j)->nm);
+			*(cm.cm+k)='\"';
+			*(cm.cm+k+1)='}';
 		}
 	}
 	PRINTF_TIME("\x1b[38;2;40;210;190m%s => \x1b[38;2;70;210;70m+%u\x1b[38;2;40;210;190m, \x1b[38;2;230;210;40m?%u\x1b[38;2;40;210;190m, \x1b[38;2;190;0;220m!%u\x1b[38;2;40;210;190m, \x1b[38;2;210;40;40m-%u\n",e_dt->e.fp,cm.cnt[GITHUB_COMMIT_DATA_UPDATE_COUNT],cm.cnt[GITHUB_COMMIT_DATA_SKIP_COUNT],cm.cnt[GITHUB_COMMIT_DATA_IGNORE_COUNT],cm.cnt[GITHUB_COMMIT_DATA_DELETE_COUNT]);
+	_free_gitignore_data(&gdt);
 	if (r_t.dt){
 		free(r_t.dt);
 	}
-	_free_gitignore_data(&gdt);
+	if (cm.cml!=64){
+		PRINTF_TIME("\x1b[38;2;100;100;100mUploading Changes...\n");
+		cm.cml+=3;
+		cm.cm=realloc(cm.cm,cm.cml*sizeof(char));
+		*(cm.cm+cm.cml-3)=']';
+		*(cm.cm+cm.cml-2)='}';
+		*(cm.cm+cm.cml-1)=0;
+		url[url_i+_copy_str(url+url_i,"git/trees")]=0;
+		dt=_github_api_request("POST",url,cm.cm);
+		free(cm.cm);
+		p=dt;
+		if (_parse_json(&p,&json)){
+			free(dt);
+			free(bl);
+			return;
+		}
+		free(dt);
+		printf("%s\n",_get_by_key(&json,"sha")->dt.s.v);
+		_free_json(&json);
+		PRINTF_TIME("\x1b[38;2;100;100;100mChanges Uploaded...\n");
+	}
+	else{
+		free(cm.cm);
+	}
 	if (cr){
 		FILE* f=fopen(GITHUB_PROJECT_BRANCH_LIST_FILE_PATH,"wb");
 		fputc(bll>>8,f);
