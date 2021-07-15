@@ -437,7 +437,7 @@ uint8_t _parse_json(json_parser_state_t* p,json_object_t* o){
 		o->t=JSON_OBJECT_TYPE_NULL;
 		return 0;
 	}
-	uint8_t s=1;
+	int8_t s=1;
 	if (c=='-'){
 		s=-1;
 		c=JSON_PARSER_NEXT_CHAR(p);
@@ -473,12 +473,13 @@ uint8_t _parse_json(json_parser_state_t* p,json_object_t* o){
 			pw_s=-1;
 		}
 		int64_t pw=0;
-		while (c>4&&c<58){
+		while (c>47&&c<58){
 			pw=pw*10+(c-48);
 			c=JSON_PARSER_NEXT_CHAR(p);
 		}
 		pw*=pw_s;
 		v*=pow(2,(double)pw)*pow(5,(double)pw);
+		(*p)--;
 	}
 	(*p)--;
 	o->t=JSON_OBJECT_TYPE_FLOAT;
