@@ -3008,7 +3008,7 @@ _cleanup_project_list:
 			{
 				HWND hwnd=_console();
 				if (argc==2||(argv[2][0]=='*'&&!argv[2][1])){
-					// _move_to_desktop(hwnd,2);
+					_move_to_desktop(hwnd,2);
 					if (getenv("DISABLE_BULK_PROJECT_PUSH")){
 						PRINTF_TIME("\x1b[38;2;200;40;20mProject Push Diabled.\n");
 						getchar();
